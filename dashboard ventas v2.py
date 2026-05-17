@@ -9,8 +9,11 @@ from dash import Dash, dcc, html, Input, Output, State, no_update, callback_cont
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
-import warnings, webbrowser, threading, os, sys, io, base64, unicodedata, hashlib
+import warnings, webbrowser, threading, os, sys, io, base64, unicodedata, hashlib, json
 from datetime import datetime
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 
 warnings.filterwarnings('ignore')
 
@@ -26,6 +29,7 @@ except ImportError:
     PDF_AVAILABLE = False
 
 EXCEL_PATH = "/Volumes/santi 2T/dashboard/Dashboard.xlsx"
+DRIVE_FILE_ID = "1tPmdaJuR0pRMEjRkZ58JopLxdKztCXfn"
 PORT = 8050
 
 C = {
@@ -45,10 +49,26 @@ MONO = "'Courier New', monospace"
 # ── Carga ─────────────────────────────────────────────────────────────────────
 
 def load_data():
-    if not os.path.exists(EXCEL_PATH):
-        print(f"\n[ERROR] Archivo no encontrado:\n  {EXCEL_PATH}\n")
-        sys.exit(1)
-    xl = pd.ExcelFile(EXCEL_PATH)
+    google_creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+    if google_creds_json:
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(google_creds_json),
+            scopes=['https://www.googleapis.com/auth/drive.readonly']
+        )
+        service = build('drive', 'v3', credentials=creds)
+        request = service.files().get_media(fileId=DRIVE_FILE_ID)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        buf.seek(0)
+        xl = pd.ExcelFile(buf)
+    else:
+        if not os.path.exists(EXCEL_PATH):
+            print(f"\n[ERROR] Archivo no encontrado:\n  {EXCEL_PATH}\n")
+            sys.exit(1)
+        xl = pd.ExcelFile(EXCEL_PATH)
     dfs = {}
     for sheet in xl.sheet_names:
         df = xl.parse(sheet)
