@@ -1,0 +1,76 @@
+/* ─────────────────────────────────────────────────
+   Catena Zapata Dashboard — Dark Theme Override
+   Dash 4.x: el JS en index_string maneja dropdowns
+   Este archivo cubre tabs, botones y print A4
+   ───────────────────────────────────────────────── */
+
+body { background-color: #0D0D0D !important; }
+
+/* ── Tabs ── */
+.dash-tab, .tab {
+    background-color: transparent !important;
+    color: #888888 !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    cursor: pointer !important;
+}
+.dash-tab--selected, .tab--selected {
+    color: #C9A84C !important;
+    border-bottom: 2px solid #C9A84C !important;
+    background-color: transparent !important;
+}
+
+/* ── Botones ── */
+button {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    font-family: inherit !important;
+}
+button:disabled { opacity: 1 !important; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #161616; }
+::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 3px; }
+
+/* ── Impresión A4 ── */
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 1.2cm 1.5cm;
+    }
+
+    /* Ocultar elementos de navegación */
+    .no-print,
+    .dash-tabs-content > .dash-tab,
+    #btn-print { display: none !important; }
+
+    body {
+        background: white !important;
+        color: #111111 !important;
+        font-size: 9pt;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Fondo blanco en gráficos */
+    .js-plotly-plot,
+    .js-plotly-plot .plotly,
+    .plot-container { background: white !important; }
+
+    /* Cards con borde visible para impresión */
+    div[style*="backgroundColor: rgb(22, 22, 22)"],
+    div[style*="background-color: #161616"] {
+        background-color: #f8f8f8 !important;
+        border: 1px solid #cccccc !important;
+        color: #111 !important;
+    }
+
+    /* KPIs en una fila */
+    div[style*="gridTemplateColumns: repeat(6"] {
+        page-break-inside: avoid;
+    }
+
+    /* Salto de página entre secciones grandes */
+    .page-break { page-break-before: always; }
+}
