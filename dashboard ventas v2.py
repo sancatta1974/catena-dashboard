@@ -2080,7 +2080,7 @@ app.layout = html.Div([
         dcc.Download(id='download-pdf'),
         dcc.Download(id='download-resumen'),
         dcc.Download(id='download-tab-pdf'),
-        dcc.Interval(id='interval', interval=300000, n_intervals=0),
+        dcc.Interval(id='interval', interval=3600000, n_intervals=0),
         html.Div(id='_refresh_dummy', style={'display': 'none'}),
         dcc.Store(id='data-version', data=0),
         dcc.Store(id='drive-modified', data=''),
