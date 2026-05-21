@@ -51,21 +51,27 @@ MONO = "'Courier New', monospace"
 
 # ── Carga ─────────────────────────────────────────────────────────────────────
 
+_DRIVE_SERVICE_CACHE = None
+
 def _get_drive_service():
-    google_creds_json = os.environ.get('GOOGLE_CREDENTIALS')
-    if google_creds_json:
-        creds = service_account.Credentials.from_service_account_info(
-            json.loads(google_creds_json),
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
-        )
-    elif os.path.exists(CREDS_PATH):
-        creds = service_account.Credentials.from_service_account_file(
-            CREDS_PATH,
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
-        )
-    else:
-        return None, None
-    service = build('drive', 'v3', credentials=creds)
+    global _DRIVE_SERVICE_CACHE
+    if _DRIVE_SERVICE_CACHE is None:
+        google_creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+        if google_creds_json:
+            creds = service_account.Credentials.from_service_account_info(
+                json.loads(google_creds_json),
+                scopes=['https://www.googleapis.com/auth/drive.readonly']
+            )
+        elif os.path.exists(CREDS_PATH):
+            creds = service_account.Credentials.from_service_account_file(
+                CREDS_PATH,
+                scopes=['https://www.googleapis.com/auth/drive.readonly']
+            )
+        else:
+            return None, None
+        # cache_discovery=False evita guardar el documento de discovery en memoria
+        _DRIVE_SERVICE_CACHE = build('drive', 'v3', credentials=creds, cache_discovery=False)
+    service = _DRIVE_SERVICE_CACHE
     folder_res = service.files().list(
         q=f"name='{DRIVE_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
         spaces='drive', fields='files(id)').execute()
@@ -2074,7 +2080,7 @@ app.layout = html.Div([
         dcc.Download(id='download-pdf'),
         dcc.Download(id='download-resumen'),
         dcc.Download(id='download-tab-pdf'),
-        dcc.Interval(id='interval', interval=120000, n_intervals=0),
+        dcc.Interval(id='interval', interval=300000, n_intervals=0),
         html.Div(id='_refresh_dummy', style={'display': 'none'}),
         dcc.Store(id='data-version', data=0),
         dcc.Store(id='drive-modified', data=''),
