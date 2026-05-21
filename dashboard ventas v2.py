@@ -687,11 +687,18 @@ def analisis_clientes(repre_sel, flia_sel, meses_sel=None):
     full['ant'] = full['ant'].fillna(0)
     full['dif'] = full['act'] - full['ant']
     full['var'] = (full['dif'] / full['ant'].replace(0, np.nan)) * 100
-    activos  = full[(full['act'] > 0) & (full['ant'] > 0)].copy()
-    con_crecimiento = full[full['dif'] > 0].copy()
-    con_caida       = full[full['dif'] < 0].copy()
+    # categorías mutuamente excluyentes y lógicamente coherentes
+    nuevos_cli   = full[(full['ant'] == 0) & (full['act'] > 0)].copy()   # no existían antes
+    crecieron    = full[(full['ant'] > 0)  & (full['act'] > 0) & (full['dif'] > 0)].copy()
+    cayeron      = full[(full['ant'] > 0)  & (full['act'] > 0) & (full['dif'] < 0)].copy()
+    perdidos_cli = full[(full['ant'] > 0)  & (full['act'] == 0)].copy()  # no compraron este año
+    activos      = full[(full['act'] > 0)  & (full['ant'] > 0)].copy()   # compraron ambos años
+    con_crecimiento = full[full['dif'] > 0].copy()   # para el gráfico (incluye nuevos)
+    con_caida       = full[full['dif'] < 0].copy()   # para el gráfico (incluye perdidos)
     return {
         'full': full, 'nuevos': con_crecimiento, 'perdidos': con_caida, 'activos': activos,
+        'nuevos_cli': nuevos_cli, 'crecieron': crecieron,
+        'cayeron': cayeron, 'perdidos_cli': perdidos_cli,
         'top_sube': full[full['dif'] > 0].nlargest(20, 'dif').sort_values('dif'),
         'top_baja': full[full['dif'] < 0].nsmallest(20, 'dif').sort_values('dif', ascending=False),
     }
@@ -2300,15 +2307,18 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
     elif tab == 'clientes':
         try:
             datos = analisis_clientes(repre, flia, meses)
-            n, p, a = len(datos['nuevos']), len(datos['perdidos']), len(datos['activos'])
-            total_crec  = int(datos['nuevos']['dif'].sum())
-            total_caida = int(datos['perdidos']['dif'].abs().sum())
+            n_nuevos   = len(datos['nuevos_cli'])
+            n_crec     = len(datos['crecieron'])
+            n_caida    = len(datos['cayeron'])
+            n_perdidos = len(datos['perdidos_cli'])
+            dif_crec   = int(datos['crecieron']['dif'].sum())
+            dif_caida  = int(datos['cayeron']['dif'].abs().sum())
             stats_items = [
-                ('ACTIVOS AMBOS AÑOS',    str(a),              C['gold']),
-                ('CON CRECIMIENTO',        str(n),              C['green']),
-                ('CON CAÍDAS',             str(p),              C['red']),
-                ('CAJAS CRECIMIENTO',      f"{total_crec:,}",   C['green']),
-                ('CAJAS CAÍDAS',           f"{total_caida:,}",  C['red']),
+                ('CLIENTES NUEVOS',        str(n_nuevos),       C['gold']),
+                ('CRECIERON',              str(n_crec),         C['green']),
+                ('CAYERON',                str(n_caida),        C['red']),
+                ('CAJAS CRECIMIENTO',      f"{dif_crec:,}",     C['green']),
+                ('CAJAS CAÍDAS',           f"{dif_caida:,}",    C['red']),
             ]
             stats_bar = html.Div([
                 html.Div([
