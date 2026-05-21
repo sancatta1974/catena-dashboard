@@ -180,9 +180,12 @@ def _make_pin(name, used):
 
 _SKIP_REPS = {'directos casa interior'}
 
-_used_pins = {'piso3'}
-_used_keys = {'jefe'}
-USERS = {'jefe': {'password': 'piso3', 'role': 'admin', 'repre': None}}
+_used_pins = {'piso3', 'tio'}
+_used_keys = {'jefe', 'florio'}
+USERS = {
+    'jefe':   {'password': 'piso3', 'role': 'admin', 'repre': None},
+    'florio': {'password': 'tio',   'role': 'admin', 'repre': None},
+}
 for _r in REPRESENTANTES:
     if _norm(_r) in _SKIP_REPS:
         continue
@@ -209,11 +212,21 @@ PL = dict(
     bargap=0.28,
 )
 
-def _var(v):
-    """Formatea variación % con 1 decimal; muestra '—' si es NaN/inf."""
+VAR_CAP = 500  # límite de visualización para variaciones extremas (líneas nuevas)
+
+def _var(v, sin_ant=False):
+    """Formatea variación %; '—' si NaN/inf, 'NUEVO' si no había ventas el año anterior."""
+    if sin_ant:
+        return 'NUEVO'
     if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
         return '—'
     return f"{v:+.0f}%"
+
+def _cap_var(v, sin_ant=False):
+    """Valor capeado para la barra; las líneas nuevas o extremas se capean a ±VAR_CAP."""
+    if sin_ant or v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
+        return VAR_CAP  # barra corta positiva para 'NUEVO'
+    return max(-VAR_CAP, min(VAR_CAP, v))
 
 # ── Figuras ────────────────────────────────────────────────────────────────────
 
@@ -228,15 +241,21 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
         else:
             act = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'], meses_sel)
             ant = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'], meses_sel)
-        m = act.merge(ant, on='flia', suffixes=('_a','_b'))
-        m['var']  = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
-        m['part'] = m['Total_a'] / m['Total_a'].sum() * 100
+        m = act.merge(ant, on='flia', how='outer', suffixes=('_a','_b'))
+        m['Total_a'] = m['Total_a'].fillna(0)
+        m['Total_b'] = m['Total_b'].fillna(0)
+        m['var']    = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
+        m['sin_ant'] = m['Total_b'] == 0
+        m = m[m['Total_a'] > 0]  # solo familias con ventas este año
+        m['part']   = m['Total_a'] / m['Total_a'].sum() * 100
         if flia_sel:
             m = m[m['flia'] == flia_sel]
-        m = m.dropna(subset=['Total_a']).sort_values('Total_a', ascending=True)
+        m = m.sort_values('Total_a', ascending=True)
 
-        col_var = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in m['var']]
-        col_vol = col_var
+        col_var = [C['gold'] if row['sin_ant'] else (C['green'] if (pd.notna(row['var']) and row['var'] >= 0) else C['red'])
+                   for _, row in m.iterrows()]
+        col_vol = [C['gold'] if row['sin_ant'] else (C['green'] if (pd.notna(row['var']) and row['var'] >= 0) else C['red'])
+                   for _, row in m.iterrows()]
 
         height = max(260, len(m) * 24 + 70)
 
@@ -247,17 +266,24 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
             horizontal_spacing=0.12,
         )
 
-        # Panel izq: var%
+        # Panel izq: var% — capeado para no distorsionar escala
+        var_display = [_cap_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
+        var_labels  = [_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
+        hover_var   = [f"+{row['Total_a']:.0f} caj (NUEVO)" if row['sin_ant'] else f"{row['var']:+.0f}%" for _, row in m.iterrows()]
         fig.add_trace(go.Bar(
-            y=m['flia'], x=m['var'].fillna(0).round(0), orientation='h',
+            y=m['flia'], x=var_display, orientation='h',
             marker_color=col_var,
-            text=[_var(v) for v in m['var']],
+            text=var_labels,
             textposition='outside',
             textfont=dict(size=14, color=C['text']),
-            hovertemplate='<b>%{y}</b><br>Var: %{x:+.0f}%<extra></extra>',
+            customdata=hover_var,
+            hovertemplate='<b>%{y}</b><br>Var: %{customdata}<extra></extra>',
         ), row=1, col=1)
 
         # Panel der: barras horizontales ordenadas, color por crecimiento/caída
+        hover_der = [f"+{int(row['Total_a']):,} caj (NUEVO — sin año anterior)" if row['sin_ant']
+                     else f"Anterior: {int(row['Total_b']):,}\nVar: {row['var']:+.0f}%"
+                     for _, row in m.iterrows()]
         fig.add_trace(go.Bar(
             y=m['flia'], x=m['Total_a'], orientation='h',
             marker_color=col_vol,
@@ -265,8 +291,8 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
             textposition='inside',
             insidetextanchor='middle',
             textfont=dict(size=10, color='#FFFFFF'),
-            customdata=np.column_stack([m['part'].round(0), m['Total_b'], m['var'].fillna(0).round(0)]),
-            hovertemplate='<b>%{y}</b><br>Actual: %{x:,.0f} caj  (%{customdata[0]:.0f}%)<br>Anterior: %{customdata[1]:,.0f}<br>Var: %{customdata[2]:+.0f}%<extra></extra>',
+            customdata=np.column_stack([m['part'].round(0), hover_der]),
+            hovertemplate='<b>%{y}</b><br>Actual: %{x:,.0f} caj  (%{customdata[0]:.0f}%)<br>%{customdata[1]}<extra></extra>',
         ), row=1, col=2)
         # % participación afuera de las barras de cajas
         fig.add_trace(go.Scatter(
@@ -290,7 +316,7 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
         )
         fig.update_xaxes(tickfont=dict(size=10), gridcolor=C['border'])
         fig.update_yaxes(tickfont=dict(size=10))
-        fig.update_xaxes(ticksuffix='%',    row=1, col=1)
+        fig.update_xaxes(ticksuffix='%', range=[-VAR_CAP * 1.3, VAR_CAP * 1.3], row=1, col=1)
         fig.update_xaxes(ticksuffix=' caj', row=1, col=2)
         return fig
     except Exception as e:
@@ -347,9 +373,15 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
         if meses_sel:
             av = get_ind(df_repre, 'Año Actual Cajas', ['Vendedor','flia'], meses_sel)
             bv = get_ind(df_repre, 'Año Anterior Cajas', ['Vendedor','flia'], meses_sel)
-            rv_tot = av.groupby('Vendedor')['Total'].sum().reset_index().merge(
-                bv.groupby('Vendedor')['Total'].sum().reset_index(), on='Vendedor', suffixes=('_a','_b'))
+            av_tot = av.groupby('Vendedor')['Total'].sum().reset_index()
+            bv_tot = bv.groupby('Vendedor')['Total'].sum().reset_index()
+            # outer para no perder reps que solo aparecen en un año
+            rv_tot = av_tot.merge(bv_tot, on='Vendedor', how='outer', suffixes=('_a','_b'))
+            rv_tot['Total_a'] = rv_tot['Total_a'].fillna(0)
+            rv_tot['Total_b'] = rv_tot['Total_b'].fillna(0)
+            rv_tot['sin_ant'] = rv_tot['Total_b'] == 0
             rv_tot['var'] = (rv_tot['Total_a'] - rv_tot['Total_b']) / rv_tot['Total_b'].replace(0, np.nan) * 100
+            rv_tot = rv_tot[rv_tot['Total_a'] > 0]  # solo reps con ventas este año
             rv_tot = rv_tot.sort_values('var')
             rep_df = rv_tot.rename(columns={'var': 'Total_var', 'Total_a': 'Total_vol'}).reset_index(drop=True)
         else:
@@ -357,9 +389,16 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             av = get_ind(df_repre, 'Año Actual Cajas', ['Vendedor','flia'])
             rv_tot = rv.groupby('Vendedor')['Total'].mean().mul(100).reset_index()
             av_tot = av.groupby('Vendedor')['Total'].sum().reset_index()
-            rep_df = rv_tot.merge(av_tot, on='Vendedor', suffixes=('_var','_vol'))
+            # left desde av_tot para no perder reps sin Var % (nuevos)
+            rep_df = av_tot.merge(rv_tot, on='Vendedor', how='left', suffixes=('_vol','_var'))
+            rep_df = rep_df.rename(columns={'Total_vol': 'Total_vol', 'Total_var': 'Total_var'})
+            rep_df['Total_var'] = rep_df['Total_var'].fillna(0)
+            rep_df['sin_ant'] = rep_df['Total_var'] == 0
             rep_df = rep_df.sort_values('Total_var').reset_index(drop=True)
-        col_rep = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in rep_df['Total_var']]
+
+        sin_ant_rep = rep_df['sin_ant'] if 'sin_ant' in rep_df.columns else pd.Series([False] * len(rep_df))
+        col_rep = [C['gold'] if sa else (C['green'] if (pd.notna(v) and v >= 0) else C['red'])
+                   for v, sa in zip(rep_df['Total_var'], sin_ant_rep)]
 
         # ── Familias ──
         df_flia = DFS['x flia']
@@ -368,17 +407,26 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
         if meses_sel:
             fa_act = get_ind(df_flia, 'Año Actual Cajas', ['flia'], meses_sel)
             fa_ant = get_ind(df_flia, 'Año Anterior Cajas', ['flia'], meses_sel)
-            fam_m = fa_act.merge(fa_ant, on='flia', suffixes=('_a','_b'))
+            fam_m = fa_act.merge(fa_ant, on='flia', how='outer', suffixes=('_a','_b'))
+            fam_m['Total_a'] = fam_m['Total_a'].fillna(0)
+            fam_m['Total_b'] = fam_m['Total_b'].fillna(0)
+            fam_m['sin_ant']   = fam_m['Total_b'] == 0
             fam_m['Total_var'] = (fam_m['Total_a'] - fam_m['Total_b']) / fam_m['Total_b'].replace(0, np.nan) * 100
+            fam_m = fam_m[fam_m['Total_a'] > 0]
             fam_m = fam_m.sort_values('Total_var').reset_index(drop=True)
             fam_df = fam_m.rename(columns={'Total_a': 'Total_vol'})
         else:
             fv = get_ind(df_flia, 'Var %', ['flia'])
             fa = get_ind(df_flia, 'Año Actual Cajas', ['flia'])
-            fam_df = fv.merge(fa[['flia','Total']], on='flia', suffixes=('_var','_vol'))
-            fam_df['Total_var'] = fam_df['Total_var'] * 100
+            # left desde fa para no perder familias sin Var % (nuevas)
+            fam_df = fa[['flia','Total']].merge(fv[['flia','Total']], on='flia', how='left', suffixes=('_vol','_var'))
+            fam_df['Total_var'] = fam_df['Total_var'].fillna(0) * 100
+            fam_df['sin_ant']   = fam_df['Total_var'] == 0
             fam_df = fam_df.sort_values('Total_var').reset_index(drop=True)
-        col_fam = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in fam_df['Total_var']]
+
+        sin_ant_fam = fam_df['sin_ant'] if 'sin_ant' in fam_df.columns else pd.Series([False] * len(fam_df))
+        col_fam = [C['gold'] if sa else (C['green'] if (pd.notna(v) and v >= 0) else C['red'])
+                   for v, sa in zip(fam_df['Total_var'], sin_ant_fam)]
 
         fig = make_subplots(
             rows=1, cols=2,
@@ -387,30 +435,31 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             column_widths=[0.55, 0.45],
         )
 
-        # Panel izq — representantes
+        # Panel izq — representantes (sin variaciones extremas esperadas aquí)
+        rep_sin_ant = rep_df.get('sin_ant', pd.Series([False] * len(rep_df)))
         fig.add_trace(go.Bar(
             y=rep_df['Vendedor'].str[:22],
-            x=rep_df['Total_var'].fillna(0).round(0),
+            x=[_cap_var(v, sa) for v, sa in zip(rep_df['Total_var'], rep_sin_ant)],
             orientation='h',
             marker_color=col_rep,
             textposition='outside',
-            text=[_var(v) for v in rep_df['Total_var']],
+            text=[_var(v, sa) for v, sa in zip(rep_df['Total_var'], rep_sin_ant)],
             textfont=dict(size=14, color=C['text']),
             customdata=rep_df['Total_vol'],
-            hovertemplate='<b>%{y}</b><br>Var: %{x:+.0f}%<br>Cajas: %{customdata:,.0f}<extra></extra>',
+            hovertemplate='<b>%{y}</b><br>Cajas: %{customdata:,.0f}<extra></extra>',
         ), row=1, col=1)
 
         # Panel der — familias
         fig.add_trace(go.Bar(
             y=fam_df['flia'].str[:18],
-            x=fam_df['Total_var'].fillna(0).round(0),
+            x=[_cap_var(v, sa) for v, sa in zip(fam_df['Total_var'], sin_ant_fam)],
             orientation='h',
             marker_color=col_fam,
             textposition='outside',
-            text=[_var(v) for v in fam_df['Total_var']],
+            text=[_var(v, sa) for v, sa in zip(fam_df['Total_var'], sin_ant_fam)],
             textfont=dict(size=14, color=C['text']),
             customdata=fam_df['Total_vol'],
-            hovertemplate='<b>%{y}</b><br>Var: %{x:+.0f}%<br>Cajas: %{customdata:,.0f}<extra></extra>',
+            hovertemplate='<b>%{y}</b><br>Cajas: %{customdata:,.0f}<extra></extra>',
         ), row=1, col=2)
 
         # Línea de cero en ambos paneles
@@ -429,7 +478,8 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             showlegend=False,
             margin=dict(l=10, r=80, t=46, b=24),
         )
-        fig.update_xaxes(ticksuffix='%', tickfont=dict(size=10), gridcolor=C['border'])
+        fig.update_xaxes(ticksuffix='%', tickfont=dict(size=10), gridcolor=C['border'],
+                         range=[-VAR_CAP * 1.3, VAR_CAP * 1.3])
         fig.update_yaxes(tickfont=dict(size=10))
         return fig
     except Exception as e:
@@ -450,9 +500,13 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
             ant = ant[ant['flia'] == flia_sel]
         a = act.groupby('Vendedor')['Total'].sum().reset_index()
         b = ant.groupby('Vendedor')['Total'].sum().reset_index()
-        m = a.merge(b, on='Vendedor', suffixes=('_a','_b'))
-        m['var']  = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
-        m['part'] = m['Total_a'] / m['Total_a'].sum() * 100
+        m = a.merge(b, on='Vendedor', how='outer', suffixes=('_a','_b'))
+        m['Total_a'] = m['Total_a'].fillna(0)
+        m['Total_b'] = m['Total_b'].fillna(0)
+        m = m[m['Total_a'] > 0]  # solo reps con ventas este año
+        m['var']     = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
+        m['sin_ant'] = m['Total_b'] == 0
+        m['part']    = m['Total_a'] / m['Total_a'].sum() * 100
         m = m.sort_values('Total_a', ascending=False)
         nombres = m['Vendedor'].str[:18]
 
@@ -460,22 +514,26 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
         if repre_sel:
             col_vol = [C['gold'] if v == repre_sel else 'rgba(201,168,76,0.25)' for v in m['Vendedor']]
             col_var = []
-            for i, (v, pct) in enumerate(zip(m['Vendedor'], m['var'])):
-                if v == repre_sel:
-                    col_var.append(C['green'] if pct >= 0 else C['red'])
+            for _, row in m.iterrows():
+                if row['Vendedor'] == repre_sel:
+                    col_var.append(C['gold'] if row['sin_ant'] else (C['green'] if pd.notna(row['var']) and row['var'] >= 0 else C['red']))
                 else:
                     col_var.append('rgba(200,200,200,0.15)')
         else:
             col_vol = [C['gold']] * len(m)
-            col_var = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in m['var']]
+            col_var = [C['gold'] if row['sin_ant'] else (C['green'] if (pd.notna(row['var']) and row['var'] >= 0) else C['red'])
+                       for _, row in m.iterrows()]
+
+        var_display = [_cap_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
+        var_labels  = [_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
 
         fig = make_subplots(rows=1, cols=2,
                             subplot_titles=['Var % vs Año Anterior', 'Cajas Año Actual (% participación)'])
-        fig.add_trace(go.Bar(x=nombres, y=m['var'].fillna(0).round(0), marker_color=col_var,
-                             text=[_var(v) for v in m['var']],
+        fig.add_trace(go.Bar(x=nombres, y=var_display, marker_color=col_var,
+                             text=var_labels,
                              textposition='outside',
                              textfont=dict(size=14, color=C['text']),
-                             hovertemplate='%{x}<br>%{y:+.0f}%<extra></extra>'), row=1, col=1)
+                             hovertemplate='%{x}<br>Var: %{text}<extra></extra>'), row=1, col=1)
         fig.add_trace(go.Bar(x=nombres, y=m['Total_a'], marker_color=col_vol,
                              text=[f"{int(v):,}" for v in m['Total_a']],
                              textposition='inside', insidetextanchor='middle',
@@ -495,6 +553,7 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
         fig.update_layout(**_pl, title=title, height=340, showlegend=False,
                           margin=dict(l=30, r=20, t=46, b=70))
         fig.update_xaxes(tickangle=-40, tickfont=dict(size=10))
+        fig.update_xaxes(range=[-VAR_CAP * 1.3, VAR_CAP * 1.3], row=1, col=1)
         fig.update_yaxes(tickfont=dict(size=10))
         return fig
     except Exception as e:
