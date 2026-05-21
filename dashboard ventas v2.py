@@ -127,6 +127,13 @@ def load_data():
             except:
                 pass
         dfs[sheet.strip().lower()] = df  # siempre minúscula
+
+    # eliminar fila de totales de pend (Familia Producto == 'Total')
+    if 'pend' in dfs and 'Familia Producto' in dfs['pend'].columns:
+        dfs['pend'] = dfs['pend'][
+            dfs['pend']['Familia Producto'].str.upper().str.strip() != 'TOTAL'
+        ]
+
     return dfs
 
 def month_cols(df):
