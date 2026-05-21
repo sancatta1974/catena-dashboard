@@ -120,12 +120,33 @@ def load_data():
     dfs = {}
     for sheet in xl.sheet_names:
         df = xl.parse(sheet)
+        df.columns = [str(c).strip() for c in df.columns]
         for col in df.select_dtypes(include='object').columns:
             try:
                 df[col] = df[col].str.strip()
             except:
                 pass
         dfs[sheet.strip()] = df
+
+    # normalizar hoja PEND: buscarla aunque tenga nombre levemente distinto
+    if 'PEND' not in dfs:
+        for k in list(dfs.keys()):
+            if k.upper() == 'PEND':
+                dfs['PEND'] = dfs[k]
+                break
+
+    # normalizar columna "Pedidos Pendientes" en PEND
+    if 'PEND' in dfs:
+        pend_df = dfs['PEND']
+        col_map = {c.lower(): c for c in pend_df.columns}
+        if 'pedidos pendientes' in col_map and col_map['pedidos pendientes'] != 'Pedidos Pendientes':
+            pend_df = pend_df.rename(columns={col_map['pedidos pendientes']: 'Pedidos Pendientes'})
+        if 'vendedor' in col_map and col_map['vendedor'] != 'Vendedor':
+            pend_df = pend_df.rename(columns={col_map['vendedor']: 'Vendedor'})
+        if 'familia producto' in col_map and col_map['familia producto'] != 'Familia Producto':
+            pend_df = pend_df.rename(columns={col_map['familia producto']: 'Familia Producto'})
+        dfs['PEND'] = pend_df
+
     return dfs
 
 def month_cols(df):
