@@ -29,7 +29,9 @@ except ImportError:
     PDF_AVAILABLE = False
 
 EXCEL_PATH = "/Volumes/santi 2T/dashboard/Dashboard.xlsx"
-DRIVE_FILE_ID = "1tPmdaJuR0pRMEjRkZ58JopLxdKztCXfn"
+DRIVE_FOLDER = "Dashboard"
+DRIVE_FILENAME = "Dashboard.xlsx"
+CREDS_PATH = "/Users/santi/Downloads/catena-dashboard-fe7dc08d5408.json"
 PORT = 8050
 
 C = {
@@ -50,13 +52,39 @@ MONO = "'Courier New', monospace"
 
 def load_data():
     google_creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+    use_drive = False
     if google_creds_json:
         creds = service_account.Credentials.from_service_account_info(
             json.loads(google_creds_json),
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
+        use_drive = True
+    elif os.path.exists(CREDS_PATH):
+        creds = service_account.Credentials.from_service_account_file(
+            CREDS_PATH,
+            scopes=['https://www.googleapis.com/auth/drive.readonly']
+        )
+        use_drive = True
+
+    if use_drive:
         service = build('drive', 'v3', credentials=creds)
-        request = service.files().get_media(fileId=DRIVE_FILE_ID)
+        # buscar carpeta por nombre
+        folder_res = service.files().list(
+            q=f"name='{DRIVE_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            spaces='drive', fields='files(id)').execute()
+        folders = folder_res.get('files', [])
+        if folders:
+            folder_id = folders[0]['id']
+            q = f"name='{DRIVE_FILENAME}' and '{folder_id}' in parents and trashed=false"
+        else:
+            q = f"name='{DRIVE_FILENAME}' and trashed=false"
+        file_res = service.files().list(
+            q=q, spaces='drive', fields='files(id)', orderBy='modifiedTime desc').execute()
+        files = file_res.get('files', [])
+        if not files:
+            raise FileNotFoundError(f"No se encontró '{DRIVE_FILENAME}' en Drive")
+        file_id = files[0]['id']
+        request = service.files().get_media(fileId=file_id)
         buf = io.BytesIO()
         downloader = MediaIoBaseDownload(buf, request)
         done = False
@@ -1939,6 +1967,13 @@ app.layout = html.Div([
                         'fontFamily': FONT, 'fontWeight': '600',
                         'WebkitAppearance': 'none', 'appearance': 'none', 'marginRight': '8px',
                     }),
+                    html.Button("↻ Actualizar datos", id='btn-refresh', n_clicks=0, style={
+                        'backgroundColor': 'transparent', 'color': C['muted'], 'border': f"1px solid {C['border']}",
+                        'padding': '6px 14px', 'fontSize': '9px', 'letterSpacing': '1.5px',
+                        'textTransform': 'uppercase', 'cursor': 'pointer', 'borderRadius': '2px',
+                        'fontFamily': FONT, 'fontWeight': '600',
+                        'WebkitAppearance': 'none', 'appearance': 'none', 'marginRight': '8px',
+                    }),
                     html.Button("SALIR", id='btn-logout', n_clicks=0, style=_BTN_LOGOUT),
                 ]),
             ], style={'textAlign':'right'}),
@@ -2012,6 +2047,8 @@ app.layout = html.Div([
         dcc.Download(id='download-resumen'),
         dcc.Download(id='download-tab-pdf'),
         dcc.Interval(id='interval', interval=300000, n_intervals=0),
+        html.Div(id='_refresh_dummy', style={'display': 'none'}),
+        dcc.Store(id='data-version', data=0),
 
     ]),
 
@@ -2023,31 +2060,33 @@ app.layout = html.Div([
 @app.callback(
     Output('kpis','children'),
     Input('interval','n_intervals'),
+    Input('data-version','data'),
     Input('dd-flia','value'),
     Input('dd-repre','value'),
     Input('dd-canal','value'),
     Input('dd-meses','value'),
     State('auth-store','data'),
 )
-def cb_kpis(n, flia, repre, canal, meses, auth):
+def cb_kpis(n, _ver, flia, repre, canal, meses, auth):
     if auth and auth.get('role') == 'vendedor':
         repre = auth.get('repre', '')
     return build_kpis(flia or None, repre or None, canal or None, meses_sel=meses or None)
 
 @app.callback(Output('timestamp','children'), Input('interval','n_intervals'))
 def cb_ts(n):
-    return f"Actualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    return f"Carga inicial: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
 
 @app.callback(
     Output('content','children'),
     Input('tabs','value'),
+    Input('data-version','data'),
     Input('dd-flia','value'),
     Input('dd-repre','value'),
     Input('dd-canal','value'),
     Input('dd-meses','value'),
     State('auth-store','data'),
 )
-def cb_content(tab, flia, repre, canal, meses, auth):
+def cb_content(tab, _ver, flia, repre, canal, meses, auth):
     if auth and auth.get('role') == 'vendedor':
         repre = auth.get('repre', '')
     flia  = flia  or None
@@ -2392,6 +2431,23 @@ def cb_tab_pdf(n_clicks, tab, flia, repre, canal, auth):
     nombre = f"{TAB_LABELS.get(tab, tab)}_{filtro}_{datetime.now().strftime('%Y%m%d')}.pdf"
     return dcc.send_bytes(pdf_bytes, filename=nombre)
 
+
+@app.callback(
+    Output('data-version', 'data'),
+    Output('timestamp', 'children', allow_duplicate=True),
+    Input('btn-refresh', 'n_clicks'),
+    State('data-version', 'data'),
+    prevent_initial_call=True,
+)
+def cb_refresh_data(n, version):
+    global DFS, MC, FAMILIAS, REPRESENTANTES, CANALES
+    DFS = load_data()
+    MC = month_cols(DFS['x flia'])
+    FAMILIAS = sorted(DFS['x flia']['flia'].unique().tolist())
+    REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist())
+    CANALES = sorted(DFS['x flia x canal']['Canal'].unique().tolist())
+    ts = f"Recargado desde Drive: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    return (version or 0) + 1, ts
 
 # ── Run ────────────────────────────────────────────────────────────────────────
 
