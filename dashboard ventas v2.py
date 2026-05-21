@@ -2425,6 +2425,21 @@ def cb_repre_lock(auth):
 
 
 @app.callback(
+    Output('dd-flia',  'options'),
+    Output('dd-repre', 'options'),
+    Output('dd-canal', 'options'),
+    Output('dd-meses', 'options'),
+    Input('data-version', 'data'),
+)
+def cb_update_dropdown_options(_ver):
+    flia_opts  = [{'label':'Todas','value':''}] + [{'label':f,'value':f} for f in FAMILIAS]
+    repre_opts = [{'label':'Todos','value':''}] + [{'label':r,'value':r} for r in REPRESENTANTES]
+    canal_opts = [{'label':'Todos','value':''}] + [{'label':c,'value':c} for c in CANALES]
+    mes_opts   = [{'label':m,'value':m} for m in MC]
+    return flia_opts, repre_opts, canal_opts, mes_opts
+
+
+@app.callback(
     Output('download-pdf', 'data'),
     Input('btn-pdf', 'n_clicks'),
     State('dd-repre', 'value'),
