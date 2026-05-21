@@ -28,10 +28,11 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
 
-EXCEL_PATH = "/Volumes/santi 2T/dashboard/Dashboard.xlsx"
-DRIVE_FOLDER = "Dashboard"
+EXCEL_PATH    = "/Volumes/santi 2T/dashboard/Dashboard.xlsx"
+DRIVE_FOLDER  = "Dashboard"
 DRIVE_FILENAME = "Dashboard.xlsx"
-CREDS_PATH = "/Users/santi/Downloads/catena-dashboard-fe7dc08d5408.json"
+DRIVE_FILE_ID_FALLBACK = "1tPmdaJuR0pRMEjRkZ58JopLxdKztCXfn"
+CREDS_PATH    = "/Users/santi/Downloads/catena-dashboard-fe7dc08d5408.json"
 PORT = 8050
 
 C = {
@@ -77,9 +78,15 @@ def _get_drive_service():
     file_res = service.files().list(
         q=q, spaces='drive', fields='files(id, modifiedTime)', orderBy='modifiedTime desc').execute()
     files = file_res.get('files', [])
-    if not files:
+    if files:
+        return service, files[0]
+    # fallback al ID hardcodeado si la búsqueda no encuentra nada
+    try:
+        meta = service.files().get(fileId=DRIVE_FILE_ID_FALLBACK,
+                                   fields='id,modifiedTime').execute()
+        return service, meta
+    except Exception:
         return None, None
-    return service, files[0]
 
 def get_drive_modified_time():
     """Retorna el modifiedTime del archivo en Drive sin descargarlo."""
@@ -102,8 +109,7 @@ def load_data():
         xl = pd.ExcelFile(buf)
     else:
         if not os.path.exists(EXCEL_PATH):
-            print(f"\n[ERROR] Archivo no encontrado:\n  {EXCEL_PATH}\n")
-            sys.exit(1)
+            raise FileNotFoundError(f"Archivo no encontrado en Drive ni localmente: {EXCEL_PATH}")
         xl = pd.ExcelFile(EXCEL_PATH)
     dfs = {}
     for sheet in xl.sheet_names:
@@ -132,11 +138,17 @@ def get_ind(df, ind, groups, meses_sel=None):
             sub['Total'] = sub[valid].sum(axis=1)
     return sub
 
-DFS = load_data()
-MC  = month_cols(DFS['x flia'])
-FAMILIAS       = sorted(DFS['x flia']['flia'].unique().tolist())
-REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist())
-CANALES        = sorted(DFS['x flia x canal']['Canal'].unique().tolist())
+try:
+    DFS = load_data()
+    DATA_OK = True
+except Exception as _e:
+    print(f"[WARNING] No se pudo cargar el archivo al iniciar: {_e}")
+    DFS = {}
+    DATA_OK = False
+MC  = month_cols(DFS.get('x flia', pd.DataFrame()))
+FAMILIAS       = sorted(DFS['x flia']['flia'].unique().tolist()) if DATA_OK else []
+REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist()) if DATA_OK else []
+CANALES        = sorted(DFS['x flia x canal']['Canal'].unique().tolist()) if DATA_OK else []
 
 # ── Credenciales ───────────────────────────────────────────────────────────────
 
