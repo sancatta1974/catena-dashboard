@@ -917,14 +917,18 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     except:
         tot_a = tot_b = var_t = 0
 
-    # Pendientes: sumar solo filas válidas (> 0) sin duplicar totales
+    # Pendientes: filtrar por familia/representante si hay selección
     pend = 0
     try:
         if 'pend' in DFS:
             df_pend = DFS['pend'].copy()
-            df_pend.columns = [c.strip() for c in df_pend.columns]
             df_pend['Pedidos Pendientes'] = pd.to_numeric(df_pend['Pedidos Pendientes'], errors='coerce')
-            pend = df_pend[df_pend['Pedidos Pendientes'] > 0]['Pedidos Pendientes'].sum()
+            df_pend = df_pend[df_pend['Pedidos Pendientes'] > 0]
+            if repre_sel and 'Vendedor' in df_pend.columns:
+                df_pend = df_pend[df_pend['Vendedor'] == repre_sel]
+            if flia_sel and 'Familia Producto' in df_pend.columns:
+                df_pend = df_pend[df_pend['Familia Producto'] == flia_sel]
+            pend = df_pend['Pedidos Pendientes'].sum()
     except:
         pend = 0
 
