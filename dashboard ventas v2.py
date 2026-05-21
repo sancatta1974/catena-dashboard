@@ -1968,7 +1968,7 @@ app.layout = html.Div([
                         'WebkitAppearance': 'none', 'appearance': 'none', 'marginRight': '8px',
                     }),
                     html.Button("↻ Actualizar datos", id='btn-refresh', n_clicks=0, style={
-                        'backgroundColor': 'transparent', 'color': C['muted'], 'border': f"1px solid {C['border']}",
+                        'backgroundColor': 'transparent', 'color': C['gold'], 'border': f"1px solid {C['gold']}",
                         'padding': '6px 14px', 'fontSize': '9px', 'letterSpacing': '1.5px',
                         'textTransform': 'uppercase', 'cursor': 'pointer', 'borderRadius': '2px',
                         'fontFamily': FONT, 'fontWeight': '600',
