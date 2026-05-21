@@ -684,7 +684,7 @@ def fig_clientes_nuevos_perdidos(datos):
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error crecimiento/caída: {e}')
 
-def fig_pendientes():
+def fig_pendientes(flia_sel=None, repre_sel=None):
     try:
         if 'PEND' not in DFS:
             return go.Figure().update_layout(**PL, title='Sin datos de pendientes')
@@ -692,16 +692,24 @@ def fig_pendientes():
         df.columns = [c.strip() for c in df.columns]
         df['Pedidos Pendientes'] = pd.to_numeric(df['Pedidos Pendientes'], errors='coerce')
         df = df[df['Pedidos Pendientes'] > 0]
-        # Agregar por Vendedor para evitar barras superpuestas del mismo representante
+        if repre_sel:
+            df = df[df['Vendedor'] == repre_sel]
+        if flia_sel:
+            df = df[df['Familia Producto'] == flia_sel]
         agg = df.groupby('Vendedor')['Pedidos Pendientes'].sum().reset_index()
         agg = agg.sort_values('Pedidos Pendientes', ascending=False).head(15)
+        titulo = 'Pedidos Pendientes por Vendedor'
+        if repre_sel:
+            titulo += f' — {repre_sel}'
+        elif flia_sel:
+            titulo += f' — {flia_sel}'
         fig = go.Figure(go.Bar(
             x=agg['Vendedor'].str[:28], y=agg['Pedidos Pendientes'],
             marker_color=C['gold'],
             hovertemplate='%{x}<br>Pendientes: %{y:,.0f}<extra></extra>'
         ))
         pl_p = {k: v for k, v in PL.items() if k != 'xaxis'}
-        fig.update_layout(**pl_p, title='Pedidos Pendientes por Vendedor', height=340)
+        fig.update_layout(**pl_p, title=titulo, height=340)
         fig.update_xaxes(tickangle=-35, tickfont=dict(size=13), gridcolor=C['border'])
         return fig
     except Exception as e:
@@ -2289,7 +2297,12 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
         df = DFS['PEND'].copy()
         df.columns = [c.strip() for c in df.columns]
         df['Pedidos Pendientes'] = pd.to_numeric(df['Pedidos Pendientes'], errors='coerce')
-        df = df[df['Pedidos Pendientes'] > 0].sort_values('Pedidos Pendientes', ascending=False)
+        df = df[df['Pedidos Pendientes'] > 0]
+        if repre:
+            df = df[df['Vendedor'] == repre]
+        if flia:
+            df = df[df['Familia Producto'] == flia]
+        df = df.sort_values('Pedidos Pendientes', ascending=False)
 
         # Subtotal por vendedor para la tabla
         df_agg = df.groupby('Vendedor')['Pedidos Pendientes'].sum().reset_index()
@@ -2298,7 +2311,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
 
         return html.Div([
             _pbt,
-            html.Div([dcc.Graph(figure=fig_pendientes(), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_pendientes(flia_sel=flia, repre_sel=repre), config={'displayModeBar':False})], style=CARD),
             html.Div([
                 html.Div([
                     html.Div("Detalle por Vendedor", style=SEC),
