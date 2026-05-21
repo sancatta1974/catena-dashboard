@@ -50,41 +50,49 @@ MONO = "'Courier New', monospace"
 
 # ── Carga ─────────────────────────────────────────────────────────────────────
 
-def load_data():
+def _get_drive_service():
     google_creds_json = os.environ.get('GOOGLE_CREDENTIALS')
-    use_drive = False
     if google_creds_json:
         creds = service_account.Credentials.from_service_account_info(
             json.loads(google_creds_json),
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
-        use_drive = True
     elif os.path.exists(CREDS_PATH):
         creds = service_account.Credentials.from_service_account_file(
             CREDS_PATH,
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
-        use_drive = True
+    else:
+        return None, None
+    service = build('drive', 'v3', credentials=creds)
+    folder_res = service.files().list(
+        q=f"name='{DRIVE_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        spaces='drive', fields='files(id)').execute()
+    folders = folder_res.get('files', [])
+    if folders:
+        folder_id = folders[0]['id']
+        q = f"name='{DRIVE_FILENAME}' and '{folder_id}' in parents and trashed=false"
+    else:
+        q = f"name='{DRIVE_FILENAME}' and trashed=false"
+    file_res = service.files().list(
+        q=q, spaces='drive', fields='files(id, modifiedTime)', orderBy='modifiedTime desc').execute()
+    files = file_res.get('files', [])
+    if not files:
+        return None, None
+    return service, files[0]
 
-    if use_drive:
-        service = build('drive', 'v3', credentials=creds)
-        # buscar carpeta por nombre
-        folder_res = service.files().list(
-            q=f"name='{DRIVE_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-            spaces='drive', fields='files(id)').execute()
-        folders = folder_res.get('files', [])
-        if folders:
-            folder_id = folders[0]['id']
-            q = f"name='{DRIVE_FILENAME}' and '{folder_id}' in parents and trashed=false"
-        else:
-            q = f"name='{DRIVE_FILENAME}' and trashed=false"
-        file_res = service.files().list(
-            q=q, spaces='drive', fields='files(id)', orderBy='modifiedTime desc').execute()
-        files = file_res.get('files', [])
-        if not files:
-            raise FileNotFoundError(f"No se encontró '{DRIVE_FILENAME}' en Drive")
-        file_id = files[0]['id']
-        request = service.files().get_media(fileId=file_id)
+def get_drive_modified_time():
+    """Retorna el modifiedTime del archivo en Drive sin descargarlo."""
+    try:
+        _, f = _get_drive_service()
+        return f['modifiedTime'] if f else None
+    except Exception:
+        return None
+
+def load_data():
+    service, f = _get_drive_service()
+    if service and f:
+        request = service.files().get_media(fileId=f['id'])
         buf = io.BytesIO()
         downloader = MediaIoBaseDownload(buf, request)
         done = False
@@ -2046,9 +2054,10 @@ app.layout = html.Div([
         dcc.Download(id='download-pdf'),
         dcc.Download(id='download-resumen'),
         dcc.Download(id='download-tab-pdf'),
-        dcc.Interval(id='interval', interval=300000, n_intervals=0),
+        dcc.Interval(id='interval', interval=120000, n_intervals=0),
         html.Div(id='_refresh_dummy', style={'display': 'none'}),
         dcc.Store(id='data-version', data=0),
+        dcc.Store(id='drive-modified', data=''),
 
     ]),
 
@@ -2072,9 +2081,27 @@ def cb_kpis(n, _ver, flia, repre, canal, meses, auth):
         repre = auth.get('repre', '')
     return build_kpis(flia or None, repre or None, canal or None, meses_sel=meses or None)
 
-@app.callback(Output('timestamp','children'), Input('interval','n_intervals'))
-def cb_ts(n):
-    return f"Carga inicial: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+@app.callback(
+    Output('data-version', 'data'),
+    Output('drive-modified', 'data'),
+    Output('timestamp', 'children'),
+    Input('interval', 'n_intervals'),
+    State('drive-modified', 'data'),
+    State('data-version', 'data'),
+    prevent_initial_call=False,
+)
+def cb_auto_sync(n, last_modified, version):
+    global DFS, MC, FAMILIAS, REPRESENTANTES, CANALES
+    current_modified = get_drive_modified_time()
+    now = datetime.now().strftime('%d/%m/%Y %H:%M')
+    if current_modified and current_modified != last_modified:
+        DFS = load_data()
+        MC = month_cols(DFS['x flia'])
+        FAMILIAS = sorted(DFS['x flia']['flia'].unique().tolist())
+        REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist())
+        CANALES = sorted(DFS['x flia x canal']['Canal'].unique().tolist())
+        return (version or 0) + 1, current_modified, f"Actualizado automáticamente: {now}"
+    return no_update, last_modified or '', f"Verificado: {now}"
 
 @app.callback(
     Output('content','children'),
@@ -2433,7 +2460,7 @@ def cb_tab_pdf(n_clicks, tab, flia, repre, canal, auth):
 
 
 @app.callback(
-    Output('data-version', 'data'),
+    Output('data-version', 'data', allow_duplicate=True),
     Output('timestamp', 'children', allow_duplicate=True),
     Input('btn-refresh', 'n_clicks'),
     State('data-version', 'data'),
