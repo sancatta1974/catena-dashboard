@@ -738,8 +738,8 @@ def fig_clientes_variacion(datos):
 def fig_clientes_nuevos_perdidos(datos):
     """Clientes con crecimiento vs con caída — cajas totales dentro, % var afuera."""
     try:
-        crec  = datos['nuevos'].nlargest(15, 'act').sort_values('act')
-        caida = datos['perdidos'].nlargest(15, 'act').sort_values('act')
+        crec  = datos['nuevos'].nlargest(15, 'dif').sort_values('dif')
+        caida = datos['perdidos'].nsmallest(15, 'dif').sort_values('dif', ascending=False)
         n_crec  = len(datos['nuevos'])
         n_caida = len(datos['perdidos'])
         h = max(300, max(len(crec), len(caida)) * 22 + 90)
@@ -754,28 +754,28 @@ def fig_clientes_nuevos_perdidos(datos):
         if not crec.empty:
             y_crec = crec['Cliente'].str[:28]
             fig.add_trace(go.Bar(
-                y=y_crec, x=crec['act'], orientation='h',
+                y=y_crec, x=crec['dif'], orientation='h',
                 marker_color='rgba(39,174,96,0.85)',
-                text=[f"{int(v):,} caj" for v in crec['act']],
+                text=[f"+{int(v):,} caj" for v in crec['dif']],
                 textposition='inside', insidetextanchor='middle',
                 textfont=dict(size=10, color='#FFFFFF'),
-                customdata=np.column_stack([crec['Vendedor'], crec['dif'], crec['var'].fillna(0).round(0)]),
-                hovertemplate='<b>%{y}</b><br>Rep: %{customdata[0]}<br>Cajas: %{x:,.0f}<br>Δ: +%{customdata[1]:,.0f}  %{customdata[2]:+.0f}%<extra></extra>',
+                customdata=np.column_stack([crec['Vendedor'], crec['act'], crec['ant'], crec['var'].fillna(0).round(0)]),
+                hovertemplate='<b>%{y}</b><br>Rep: %{customdata[0]}<br>Diferencia: +%{x:,.0f} caj<br>Actual: %{customdata[1]:,.0f}  Anterior: %{customdata[2]:,.0f}  %{customdata[3]:+.0f}%<extra></extra>',
             ), row=1, col=1)
         if not caida.empty:
             y_caida = caida['Cliente'].str[:28]
             fig.add_trace(go.Bar(
-                y=y_caida, x=caida['act'], orientation='h',
+                y=y_caida, x=caida['dif'], orientation='h',
                 marker_color='rgba(192,57,43,0.85)',
-                text=[f"{int(v):,} caj" for v in caida['act']],
+                text=[f"{int(v):,} caj" for v in caida['dif']],
                 textposition='inside', insidetextanchor='middle',
                 textfont=dict(size=10, color='#FFFFFF'),
-                customdata=np.column_stack([caida['Vendedor'], caida['dif'], caida['var'].fillna(0).round(0)]),
-                hovertemplate='<b>%{y}</b><br>Rep: %{customdata[0]}<br>Cajas: %{x:,.0f}<br>Δ: %{customdata[1]:,.0f}  %{customdata[2]:+.0f}%<extra></extra>',
+                customdata=np.column_stack([caida['Vendedor'], caida['act'], caida['ant'], caida['var'].fillna(0).round(0)]),
+                hovertemplate='<b>%{y}</b><br>Rep: %{customdata[0]}<br>Diferencia: %{x:,.0f} caj<br>Actual: %{customdata[1]:,.0f}  Anterior: %{customdata[2]:,.0f}  %{customdata[3]:+.0f}%<extra></extra>',
             ), row=1, col=2)
 
         pl_c = {k: v for k, v in PL.items() if k not in ('margin',)}
-        fig.update_layout(**pl_c, title='Clientes — Con Crecimiento vs Con Caídas (top 15)',
+        fig.update_layout(**pl_c, title='Clientes — Con Crecimiento vs Con Caídas — Diferencia en cajas',
                           height=h, showlegend=False, margin=dict(l=10, r=20, t=50, b=30))
         fig.update_xaxes(tickfont=dict(size=11), gridcolor=C['border'], ticksuffix=' caj')
         fig.update_yaxes(tickfont=dict(size=11))
