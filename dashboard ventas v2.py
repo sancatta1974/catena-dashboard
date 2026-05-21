@@ -296,11 +296,20 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error flia ranking: {e}')
 
-def fig_evolucion(flia_sel, meses_sel=None):
+def fig_evolucion(flia_sel, repre_sel=None, canal_sel=None, meses_sel=None):
     try:
-        df = DFS['x flia']
-        act = get_ind(df, 'Año Actual Cajas', ['flia'], meses_sel)
-        ant = get_ind(df, 'Año Anterior Cajas', ['flia'], meses_sel)
+        if repre_sel:
+            df = DFS['x repre']
+            act = get_ind(df[df['Vendedor'] == repre_sel], 'Año Actual Cajas', ['flia'], meses_sel)
+            ant = get_ind(df[df['Vendedor'] == repre_sel], 'Año Anterior Cajas', ['flia'], meses_sel)
+        elif canal_sel:
+            df = DFS['x flia x canal']
+            act = get_ind(df[df['Canal'] == canal_sel], 'Año Actual Cajas', ['flia'], meses_sel)
+            ant = get_ind(df[df['Canal'] == canal_sel], 'Año Anterior Cajas', ['flia'], meses_sel)
+        else:
+            df = DFS['x flia']
+            act = get_ind(df, 'Año Actual Cajas', ['flia'], meses_sel)
+            ant = get_ind(df, 'Año Anterior Cajas', ['flia'], meses_sel)
         if flia_sel:
             act = act[act['flia'] == flia_sel]
             ant = ant[ant['flia'] == flia_sel]
@@ -326,38 +335,46 @@ def fig_evolucion(flia_sel, meses_sel=None):
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error: {e}')
 
-def fig_ranking_ejecutivo(meses_sel=None):
+def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     """Ranking de representantes y familias por var% — reemplaza el heatmap."""
     try:
-        # ── Representantes: var% calculado desde act/ant cuando hay filtro de meses ──
+        # ── Representantes ──
+        df_repre = DFS['x repre']
+        if repre_sel:
+            df_repre = df_repre[df_repre['Vendedor'] == repre_sel]
+        if flia_sel:
+            df_repre = df_repre[df_repre['flia'] == flia_sel]
         if meses_sel:
-            av = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'], meses_sel)
-            bv = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'], meses_sel)
+            av = get_ind(df_repre, 'Año Actual Cajas', ['Vendedor','flia'], meses_sel)
+            bv = get_ind(df_repre, 'Año Anterior Cajas', ['Vendedor','flia'], meses_sel)
             rv_tot = av.groupby('Vendedor')['Total'].sum().reset_index().merge(
                 bv.groupby('Vendedor')['Total'].sum().reset_index(), on='Vendedor', suffixes=('_a','_b'))
             rv_tot['var'] = (rv_tot['Total_a'] - rv_tot['Total_b']) / rv_tot['Total_b'].replace(0, np.nan) * 100
             rv_tot = rv_tot.sort_values('var')
             rep_df = rv_tot.rename(columns={'var': 'Total_var', 'Total_a': 'Total_vol'}).reset_index(drop=True)
         else:
-            rv = get_ind(DFS['x repre'], 'Var %', ['Vendedor','flia'])
-            av = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
+            rv = get_ind(df_repre, 'Var %', ['Vendedor','flia'])
+            av = get_ind(df_repre, 'Año Actual Cajas', ['Vendedor','flia'])
             rv_tot = rv.groupby('Vendedor')['Total'].mean().mul(100).reset_index()
             av_tot = av.groupby('Vendedor')['Total'].sum().reset_index()
             rep_df = rv_tot.merge(av_tot, on='Vendedor', suffixes=('_var','_vol'))
             rep_df = rep_df.sort_values('Total_var').reset_index(drop=True)
         col_rep = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in rep_df['Total_var']]
 
-        # ── Familias: var% calculado desde act/ant cuando hay filtro de meses ──
+        # ── Familias ──
+        df_flia = DFS['x flia']
+        if flia_sel:
+            df_flia = df_flia[df_flia['flia'] == flia_sel]
         if meses_sel:
-            fa_act = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'], meses_sel)
-            fa_ant = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'], meses_sel)
+            fa_act = get_ind(df_flia, 'Año Actual Cajas', ['flia'], meses_sel)
+            fa_ant = get_ind(df_flia, 'Año Anterior Cajas', ['flia'], meses_sel)
             fam_m = fa_act.merge(fa_ant, on='flia', suffixes=('_a','_b'))
             fam_m['Total_var'] = (fam_m['Total_a'] - fam_m['Total_b']) / fam_m['Total_b'].replace(0, np.nan) * 100
             fam_m = fam_m.sort_values('Total_var').reset_index(drop=True)
             fam_df = fam_m.rename(columns={'Total_a': 'Total_vol'})
         else:
-            fv = get_ind(DFS['x flia'], 'Var %', ['flia'])
-            fa = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'])
+            fv = get_ind(df_flia, 'Var %', ['flia'])
+            fa = get_ind(df_flia, 'Año Actual Cajas', ['flia'])
             fam_df = fv.merge(fa[['flia','Total']], on='flia', suffixes=('_var','_vol'))
             fam_df['Total_var'] = fam_df['Total_var'] * 100
             fam_df = fam_df.sort_values('Total_var').reset_index(drop=True)
@@ -483,7 +500,7 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error: {e}')
 
-def fig_canal_mix(flia_sel, repre_sel, meses_sel=None):
+def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
     """Barras horizontales de participación % por canal — reemplaza el pie chart."""
     try:
         if repre_sel:
@@ -499,6 +516,9 @@ def fig_canal_mix(flia_sel, repre_sel, meses_sel=None):
         if flia_sel:
             act = act[act['flia'] == flia_sel]
             ant = ant[ant['flia'] == flia_sel]
+        if canal_sel:
+            act = act[act['Canal'] == canal_sel]
+            ant = ant[ant['Canal'] == canal_sel]
         agg_a = act.groupby('Canal')['Total'].sum().reset_index()
         agg_b = ant.groupby('Canal')['Total'].sum().reset_index()
         m = agg_a.merge(agg_b, on='Canal', suffixes=('_a','_b'))
@@ -551,11 +571,17 @@ def fig_canal_mix(flia_sel, repre_sel, meses_sel=None):
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error canal mix: {e}')
 
-def fig_canal_barras(canal_sel, meses_sel=None):
+def fig_canal_barras(canal_sel, flia_sel=None, repre_sel=None, meses_sel=None):
     try:
-        df = DFS['x flia x canal']
+        if repre_sel:
+            df = DFS['x repre x canal']
+            df = df[df['Vendedor'] == repre_sel]
+        else:
+            df = DFS['x flia x canal']
         if canal_sel:
             df = df[df['Canal'] == canal_sel]
+        if flia_sel and 'flia' in df.columns:
+            df = df[df['flia'] == flia_sel]
         act = get_ind(df, 'Año Actual Cajas', ['Canal','flia'], meses_sel)
         ant = get_ind(df, 'Año Anterior Cajas', ['Canal','flia'], meses_sel)
         a = act.groupby('Canal')['Total'].sum().reset_index()
@@ -2174,8 +2200,8 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
         return html.Div([
             _pbt,
             html.Div([dcc.Graph(figure=fig_flia_ranking(flia, canal, meses), config={'displayModeBar':False})], style=CARD),
-            html.Div([dcc.Graph(figure=fig_evolucion(flia, meses), config={'displayModeBar':False})], style=CARD),
-            html.Div([dcc.Graph(figure=fig_ranking_ejecutivo(meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_evolucion(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_ranking_ejecutivo(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
         ])
 
     elif tab == 'repre':
@@ -2209,7 +2235,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
                 _pbt,
             ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '4px'}),
             html.Div([dcc.Graph(figure=fig_repre_ranking(flia, canal, repre, meses), config={'displayModeBar':False})], style=CARD),
-            html.Div([dcc.Graph(figure=fig_canal_mix(flia, repre, meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_canal_mix(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
         ])
 
     elif tab == 'clientes':
@@ -2247,8 +2273,8 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
     elif tab == 'canales':
         return html.Div([
             _pbt,
-            html.Div([dcc.Graph(figure=fig_canal_barras(canal, meses), config={'displayModeBar':False})], style=CARD),
-            html.Div([dcc.Graph(figure=fig_canal_mix(flia, repre, meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_canal_barras(canal, flia, repre, meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_canal_mix(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
         ])
 
     elif tab == 'analisis':
