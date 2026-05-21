@@ -126,27 +126,7 @@ def load_data():
                 df[col] = df[col].str.strip()
             except:
                 pass
-        dfs[sheet.strip()] = df
-
-    # normalizar hoja PEND: buscarla aunque tenga nombre levemente distinto
-    if 'PEND' not in dfs:
-        for k in list(dfs.keys()):
-            if k.upper() == 'PEND':
-                dfs['PEND'] = dfs[k]
-                break
-
-    # normalizar columna "Pedidos Pendientes" en PEND
-    if 'PEND' in dfs:
-        pend_df = dfs['PEND']
-        col_map = {c.lower(): c for c in pend_df.columns}
-        if 'pedidos pendientes' in col_map and col_map['pedidos pendientes'] != 'Pedidos Pendientes':
-            pend_df = pend_df.rename(columns={col_map['pedidos pendientes']: 'Pedidos Pendientes'})
-        if 'vendedor' in col_map and col_map['vendedor'] != 'Vendedor':
-            pend_df = pend_df.rename(columns={col_map['vendedor']: 'Vendedor'})
-        if 'familia producto' in col_map and col_map['familia producto'] != 'Familia Producto':
-            pend_df = pend_df.rename(columns={col_map['familia producto']: 'Familia Producto'})
-        dfs['PEND'] = pend_df
-
+        dfs[sheet.strip().lower()] = df  # siempre minúscula
     return dfs
 
 def month_cols(df):
@@ -713,9 +693,9 @@ def fig_clientes_nuevos_perdidos(datos):
 
 def fig_pendientes(flia_sel=None, repre_sel=None):
     try:
-        if 'PEND' not in DFS:
+        if 'pend' not in DFS:
             return go.Figure().update_layout(**PL, title='Sin datos de pendientes')
-        df = DFS['PEND'].copy()
+        df = DFS['pend'].copy()
         df.columns = [c.strip() for c in df.columns]
         df['Pedidos Pendientes'] = pd.to_numeric(df['Pedidos Pendientes'], errors='coerce')
         df = df[df['Pedidos Pendientes'] > 0]
@@ -933,8 +913,8 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     # Pendientes: sumar solo filas válidas (> 0) sin duplicar totales
     pend = 0
     try:
-        if 'PEND' in DFS:
-            df_pend = DFS['PEND'].copy()
+        if 'pend' in DFS:
+            df_pend = DFS['pend'].copy()
             df_pend.columns = [c.strip() for c in df_pend.columns]
             df_pend['Pedidos Pendientes'] = pd.to_numeric(df_pend['Pedidos Pendientes'], errors='coerce')
             pend = df_pend[df_pend['Pedidos Pendientes'] > 0]['Pedidos Pendientes'].sum()
@@ -1337,10 +1317,10 @@ def generar_pdf_resumen(flia_sel=None, repre_sel=None, canal_sel=None):
         story.append(Paragraph(f"Error alertas: {e}", st['alert']))
 
     # ── Pendientes ──
-    if 'PEND' in DFS:
+    if 'pend' in DFS:
         story.append(Paragraph("PEDIDOS PENDIENTES (TOP 10)", st['sec']))
         try:
-            df_p = DFS['PEND'].copy()
+            df_p = DFS['pend'].copy()
             df_p.columns = [c.strip() for c in df_p.columns]
             df_p['Pedidos Pendientes'] = pd.to_numeric(df_p['Pedidos Pendientes'], errors='coerce')
             df_p = df_p[df_p['Pedidos Pendientes'] > 0]
@@ -1756,8 +1736,8 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
     elif tab == 'pendientes':
         story.append(Paragraph("PEDIDOS PENDIENTES POR VENDEDOR", st['sec']))
         try:
-            if 'PEND' in DFS:
-                df_p = DFS['PEND'].copy()
+            if 'pend' in DFS:
+                df_p = DFS['pend'].copy()
                 df_p.columns = [c.strip() for c in df_p.columns]
                 df_p['Pedidos Pendientes'] = pd.to_numeric(df_p['Pedidos Pendientes'], errors='coerce')
                 df_p = df_p[df_p['Pedidos Pendientes']>0]
@@ -2319,9 +2299,9 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
         ])
 
     elif tab == 'pendientes':
-        if 'PEND' not in DFS:
+        if 'pend' not in DFS:
             return html.Div("Sin datos de pendientes.", style={'color': C['muted']})
-        df = DFS['PEND'].copy()
+        df = DFS['pend'].copy()
         df.columns = [c.strip() for c in df.columns]
         df['Pedidos Pendientes'] = pd.to_numeric(df['Pedidos Pendientes'], errors='coerce')
         df = df[df['Pedidos Pendientes'] > 0]
