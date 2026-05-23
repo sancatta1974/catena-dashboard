@@ -16,6 +16,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 warnings.filterwarnings('ignore')
+print("[STARTUP] Módulo iniciando — importando dependencias", flush=True)
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -27,8 +28,10 @@ try:
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
     from reportlab.pdfgen import canvas as _rl_canvas
     PDF_AVAILABLE = True
-except ImportError:
+    print("[STARTUP] ReportLab OK", flush=True)
+except ImportError as _re:
     PDF_AVAILABLE = False
+    print(f"[STARTUP] ReportLab no disponible: {_re}", flush=True)
 
 EXCEL_PATH    = "/Volumes/santi 2T/dashboard/Dashboard.xlsx"
 DRIVE_FOLDER  = "Dashboard"
@@ -105,15 +108,20 @@ def get_drive_modified_time():
         return None
 
 def load_data():
+    print("[STARTUP] load_data() iniciado", flush=True)
     service, f = _get_drive_service()
     if service and f:
+        print(f"[STARTUP] Descargando desde Drive: {f.get('id','?')}", flush=True)
         request = service.files().get_media(fileId=f['id'])
         buf = io.BytesIO()
         downloader = MediaIoBaseDownload(buf, request)
         done = False
         while not done:
-            _, done = downloader.next_chunk()
+            status, done = downloader.next_chunk()
+            if status:
+                print(f"[STARTUP] Descarga {int(status.progress()*100)}%", flush=True)
         buf.seek(0)
+        print("[STARTUP] Descarga completa, parseando Excel", flush=True)
         xl = pd.ExcelFile(buf)
     else:
         if not os.path.exists(EXCEL_PATH):
@@ -154,11 +162,13 @@ def get_ind(df, ind, groups, meses_sel=None):
             sub['Total'] = sub[valid].sum(axis=1)
     return sub
 
+print("[STARTUP] Cargando datos...", flush=True)
 try:
     DFS = load_data()
     DATA_OK = True
+    print(f"[STARTUP] Datos cargados OK — hojas: {list(DFS.keys())}", flush=True)
 except Exception as _e:
-    print(f"[WARNING] No se pudo cargar el archivo al iniciar: {_e}")
+    print(f"[WARNING] No se pudo cargar el archivo al iniciar: {_e}", flush=True)
     DFS = {}
     DATA_OK = False
 MC  = month_cols(DFS.get('x flia', pd.DataFrame()))
@@ -2239,10 +2249,11 @@ DD    = {'backgroundColor':C['surf2'],'color':C['text'],'border':f"1px solid {C[
          'borderRadius':'2px','fontSize':'12px'}
 
 # ── App ────────────────────────────────────────────────────────────────────────
-
+print("[STARTUP] Creando app Dash...", flush=True)
 app = Dash(__name__, suppress_callback_exceptions=True)
 app.title = "Dashboard Ventas — Catena Zapata"
 server = app.server
+print("[STARTUP] App Dash creada OK", flush=True)
 
 # CSS para dropdowns (texto visible sobre fondo oscuro)
 app.index_string = '''
