@@ -214,18 +214,18 @@ PL = dict(
 
 VAR_CAP = 500  # límite de visualización para variaciones extremas (líneas nuevas)
 
-def _var(v, sin_ant=False):
-    """Formatea variación %; '—' si NaN/inf, 'NUEVO' si no había ventas el año anterior."""
+def _var(v, sin_ant=False, cajas=None):
+    """Formatea variación %; '—' si NaN/inf; muestra cajas si no había ventas el año anterior."""
     if sin_ant:
-        return 'NUEVO'
+        return f"{int(cajas):,} caj" if cajas is not None else '—'
     if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
         return '—'
     return f"{v:+.0f}%"
 
 def _cap_var(v, sin_ant=False):
-    """Valor capeado para la barra; las líneas nuevas o extremas se capean a ±VAR_CAP."""
+    """Valor capeado para la barra; las líneas sin año anterior o extremas se capean a ±VAR_CAP."""
     if sin_ant or v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
-        return VAR_CAP  # barra corta positiva para 'NUEVO'
+        return VAR_CAP  # barra corta positiva para items sin año anterior
     return max(-VAR_CAP, min(VAR_CAP, v))
 
 # ── Figuras ────────────────────────────────────────────────────────────────────
@@ -268,20 +268,22 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
 
         # Panel izq: var% — capeado para no distorsionar escala
         var_display = [_cap_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
-        var_labels  = [_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
-        hover_var   = [f"+{row['Total_a']:.0f} caj (NUEVO)" if row['sin_ant'] else f"{row['var']:+.0f}%" for _, row in m.iterrows()]
+        var_labels  = [_var(row['var'], row['sin_ant'], row['Total_a']) for _, row in m.iterrows()]
+        var_tpos    = ['inside' if row['sin_ant'] else 'outside' for _, row in m.iterrows()]
+        var_tcol    = ['#FFFFFF' if row['sin_ant'] else C['text'] for _, row in m.iterrows()]
+        hover_var   = [f"+{row['Total_a']:.0f} caj (sin año anterior)" if row['sin_ant'] else f"{row['var']:+.0f}%" for _, row in m.iterrows()]
         fig.add_trace(go.Bar(
             y=m['flia'], x=var_display, orientation='h',
             marker_color=col_var,
             text=var_labels,
-            textposition='outside',
-            textfont=dict(size=14, color=C['text']),
+            textposition=var_tpos,
+            textfont=dict(size=12, color=var_tcol),
             customdata=hover_var,
             hovertemplate='<b>%{y}</b><br>Var: %{customdata}<extra></extra>',
         ), row=1, col=1)
 
         # Panel der: barras horizontales ordenadas, color por crecimiento/caída
-        hover_der = [f"+{int(row['Total_a']):,} caj (NUEVO — sin año anterior)" if row['sin_ant']
+        hover_der = [f"+{int(row['Total_a']):,} caj (sin año anterior)" if row['sin_ant']
                      else f"Anterior: {int(row['Total_b']):,}\nVar: {row['var']:+.0f}%"
                      for _, row in m.iterrows()]
         fig.add_trace(go.Bar(
@@ -437,27 +439,33 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
 
         # Panel izq — representantes (sin variaciones extremas esperadas aquí)
         rep_sin_ant = rep_df.get('sin_ant', pd.Series([False] * len(rep_df)))
+        rep_vol_list = list(rep_df['Total_vol'])
+        rep_tpos = ['inside' if sa else 'outside' for sa in rep_sin_ant]
+        rep_tcol = ['#FFFFFF' if sa else C['text'] for sa in rep_sin_ant]
         fig.add_trace(go.Bar(
             y=rep_df['Vendedor'].str[:22],
             x=[_cap_var(v, sa) for v, sa in zip(rep_df['Total_var'], rep_sin_ant)],
             orientation='h',
             marker_color=col_rep,
-            textposition='outside',
-            text=[_var(v, sa) for v, sa in zip(rep_df['Total_var'], rep_sin_ant)],
-            textfont=dict(size=14, color=C['text']),
+            textposition=rep_tpos,
+            text=[_var(v, sa, cj) for v, sa, cj in zip(rep_df['Total_var'], rep_sin_ant, rep_vol_list)],
+            textfont=dict(size=12, color=rep_tcol),
             customdata=rep_df['Total_vol'],
             hovertemplate='<b>%{y}</b><br>Cajas: %{customdata:,.0f}<extra></extra>',
         ), row=1, col=1)
 
         # Panel der — familias
+        fam_vol_list = list(fam_df['Total_vol'])
+        fam_tpos = ['inside' if sa else 'outside' for sa in sin_ant_fam]
+        fam_tcol = ['#FFFFFF' if sa else C['text'] for sa in sin_ant_fam]
         fig.add_trace(go.Bar(
             y=fam_df['flia'].str[:18],
             x=[_cap_var(v, sa) for v, sa in zip(fam_df['Total_var'], sin_ant_fam)],
             orientation='h',
             marker_color=col_fam,
-            textposition='outside',
-            text=[_var(v, sa) for v, sa in zip(fam_df['Total_var'], sin_ant_fam)],
-            textfont=dict(size=14, color=C['text']),
+            textposition=fam_tpos,
+            text=[_var(v, sa, cj) for v, sa, cj in zip(fam_df['Total_var'], sin_ant_fam, fam_vol_list)],
+            textfont=dict(size=12, color=fam_tcol),
             customdata=fam_df['Total_vol'],
             hovertemplate='<b>%{y}</b><br>Cajas: %{customdata:,.0f}<extra></extra>',
         ), row=1, col=2)
@@ -525,14 +533,16 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
                        for _, row in m.iterrows()]
 
         var_display = [_cap_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
-        var_labels  = [_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
+        var_labels  = [_var(row['var'], row['sin_ant'], row['Total_a']) for _, row in m.iterrows()]
+        var_tpos    = ['inside' if row['sin_ant'] else 'outside' for _, row in m.iterrows()]
+        var_tcol    = ['#FFFFFF' if row['sin_ant'] else C['text'] for _, row in m.iterrows()]
 
         fig = make_subplots(rows=1, cols=2,
                             subplot_titles=['Var % vs Año Anterior', 'Cajas Año Actual (% participación)'])
         fig.add_trace(go.Bar(x=nombres, y=var_display, marker_color=col_var,
                              text=var_labels,
-                             textposition='outside',
-                             textfont=dict(size=14, color=C['text']),
+                             textposition=var_tpos,
+                             textfont=dict(size=12, color=var_tcol),
                              hovertemplate='%{x}<br>Var: %{text}<extra></extra>'), row=1, col=1)
         fig.add_trace(go.Bar(x=nombres, y=m['Total_a'], marker_color=col_vol,
                              text=[f"{int(v):,}" for v in m['Total_a']],
