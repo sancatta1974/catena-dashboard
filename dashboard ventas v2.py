@@ -609,7 +609,7 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
         return go.Figure().update_layout(**PL, title=f'Error: {e}')
 
 def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
-    """Barras horizontales de participación % por canal — reemplaza el pie chart."""
+    """Participación % por canal — gráfico de barras horizontales limpio."""
     try:
         if repre_sel:
             df = DFS['x repre x canal']
@@ -630,51 +630,42 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
         agg_a = act.groupby('Canal')['Total'].sum().reset_index()
         agg_b = ant.groupby('Canal')['Total'].sum().reset_index()
         m = agg_a.merge(agg_b, on='Canal', suffixes=('_a','_b'))
-        m = m[m['Total_a'] > 0].sort_values('Total_a', ascending=True)
+        m = m[m['Total_a'] > 0]
+        m = m[~m['Canal'].str.upper().str.strip().isin(['TRAVEL RETAIL'])]
+        m = m.sort_values('Total_a', ascending=True)
         total = m['Total_a'].sum()
-        m['pct']  = m['Total_a'] / total * 100
-        m['var']  = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
-        palette = px.colors.qualitative.Set2
-        colors  = [palette[i % len(palette)] for i in range(len(m))]
-        col_var = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in m['var']]
+        m['pct'] = m['Total_a'] / total * 100
+        m['var'] = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
 
-        fig = make_subplots(
-            rows=1, cols=2,
-            column_widths=[0.35, 0.65],
-            subplot_titles=['Var % vs Año Anterior', 'Participación % Año Actual'],
-        )
-        # Panel izq: var%
-        fig.add_trace(go.Bar(
-            y=m['Canal'], x=m['var'].fillna(0).round(0), orientation='h',
-            marker_color=col_var,
-            text=[_var(v) for v in m['var']],
-            textposition='outside',
-            textfont=dict(size=14, color=C['text']),
-            hovertemplate='<b>%{y}</b><br>%{x:+.0f}%<extra></extra>',
-        ), row=1, col=1)
-        # Panel der: barras horizontales de % con etiqueta de volumen
+        palette = ['#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F',
+                   '#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC']
+        colors = [palette[i % len(palette)] for i in range(len(m))]
+
+        fig = go.Figure()
         fig.add_trace(go.Bar(
             y=m['Canal'], x=m['pct'], orientation='h',
             marker_color=colors,
-            text=[f"{p:.0f}%  ({int(v):,} caj)" for p, v in zip(m['pct'], m['Total_a'])],
-            textposition='inside', insidetextanchor='middle',
-            textfont=dict(size=10, color='#FFFFFF'),
-            hovertemplate='<b>%{y}</b><br>%{x:.0f}%  —  %{text}<extra></extra>',
-        ), row=1, col=2)
+            marker_line_width=0,
+            text=[f"  {p:.0f}%  ({int(v):,} caj)" for p, v in zip(m['pct'], m['Total_a'])],
+            textposition='inside', insidetextanchor='start',
+            textfont=dict(size=11, color='#FFFFFF', family='Helvetica'),
+            customdata=list(zip(m['Total_a'], m['var'].fillna(float('nan')))),
+            hovertemplate='<b>%{y}</b><br>%{x:.1f}%  ·  %{customdata[0]:,.0f} caj'
+                          '<br>Var vs año ant: %{customdata[1]:+.0f}%<extra></extra>',
+        ))
 
         subtitulo = repre_sel or 'Región'
         pl_m = {k: v for k, v in PL.items() if k not in ('xaxis','yaxis','margin')}
+        altura = max(200, len(m) * 32 + 60)
         fig.update_layout(
             **pl_m,
-            title=f'Mix por Canal — {subtitulo}',
-            height=max(220, len(m) * 26 + 70),
-            margin=dict(l=10, r=80, t=46, b=24),
+            title=f'Participación por Canal — {subtitulo}',
+            height=altura,
+            margin=dict(l=10, r=30, t=40, b=20),
             showlegend=False,
+            xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+            yaxis=dict(tickfont=dict(size=11, color=C['text']), showgrid=False),
         )
-        fig.update_xaxes(tickfont=dict(size=10), gridcolor=C['border'])
-        fig.update_yaxes(tickfont=dict(size=10))
-        fig.update_xaxes(ticksuffix='%', row=1, col=1)
-        fig.update_xaxes(ticksuffix='%', row=1, col=2)
         return fig
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error canal mix: {e}')
@@ -695,6 +686,7 @@ def fig_canal_barras(canal_sel, flia_sel=None, repre_sel=None, meses_sel=None):
         a = act.groupby('Canal')['Total'].sum().reset_index()
         b = ant.groupby('Canal')['Total'].sum().reset_index()
         m = a.merge(b, on='Canal', suffixes=('_a','_b'))
+        m = m[~m['Canal'].str.upper().str.strip().isin(['TRAVEL RETAIL'])]
         m['var'] = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
         m = m.sort_values('Total_a', ascending=False)
         col_var = [C['green'] if (pd.notna(v) and v >= 0) else C['red'] for v in m['var']]
@@ -1062,6 +1054,7 @@ def generar_analisis_quirurgico(flia_sel=None, repre_sel=None, canal_sel=None, m
             act_c = act_c[[canal_sel]] if canal_sel in act_c.index else act_c
             ant_c = ant_c[[canal_sel]] if canal_sel in ant_c.index else ant_c
         df_canal = pd.DataFrame({'Actual': act_c, 'Anterior': ant_c}).reset_index()
+        df_canal = df_canal[~df_canal['Canal'].str.upper().str.strip().isin(['TRAVEL RETAIL'])]
         df_canal['Var%'] = (df_canal['Actual'] - df_canal['Anterior']) / df_canal['Anterior'].replace(0, np.nan) * 100
         df_canal['Dif'] = df_canal['Actual'] - df_canal['Anterior']
         result['canales'] = df_canal.sort_values('Var%')
@@ -1112,6 +1105,7 @@ def generar_analisis_quirurgico(flia_sel=None, repre_sel=None, canal_sel=None, m
         act2 = get_ind(src_rxc2, 'Año Actual Cajas', ['Vendedor','Canal'], meses_sel).groupby(['Vendedor','Canal'])['Total'].sum().reset_index()
         ant2 = get_ind(src_rxc2, 'Año Anterior Cajas', ['Vendedor','Canal'], meses_sel).groupby(['Vendedor','Canal'])['Total'].sum().reset_index()
         cr = act2.merge(ant2, on=['Vendedor','Canal'], suffixes=('_a','_b'))
+        cr = cr[~cr['Canal'].str.upper().str.strip().isin(['TRAVEL RETAIL'])]
         cr['var'] = (cr['Total_a'] - cr['Total_b']) / cr['Total_b'].replace(0, np.nan) * 100
         cr['dif'] = cr['Total_a'] - cr['Total_b']
         result['canal_repre'] = cr.sort_values(['Vendedor','var'])
