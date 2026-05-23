@@ -511,60 +511,97 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
         m = a.merge(b, on='Vendedor', how='outer', suffixes=('_a','_b'))
         m['Total_a'] = m['Total_a'].fillna(0)
         m['Total_b'] = m['Total_b'].fillna(0)
-        m = m[m['Total_a'] > 0]  # solo reps con ventas este año
+        m = m[m['Total_a'] > 0]
         m['var']     = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
         m['sin_ant'] = m['Total_b'] == 0
         m['part']    = m['Total_a'] / m['Total_a'].sum() * 100
-        m = m.sort_values('Total_a', ascending=False)
-        nombres = m['Vendedor'].str[:18]
+        # Ordenar: mayor volumen arriba → invertir para que quede bien en horizontal (plotly dibuja de abajo a arriba)
+        m = m.sort_values('Total_a', ascending=True)
+        nombres = m['Vendedor'].str[:22]
+        n = len(m)
+        altura = max(320, n * 38 + 80)
 
-        # Colores: resaltar el representante seleccionado
-        if repre_sel:
-            col_vol = [C['gold'] if v == repre_sel else 'rgba(201,168,76,0.25)' for v in m['Vendedor']]
-            col_var = []
-            for _, row in m.iterrows():
-                if row['Vendedor'] == repre_sel:
-                    col_var.append(C['gold'] if row['sin_ant'] else (C['green'] if pd.notna(row['var']) and row['var'] >= 0 else C['red']))
-                else:
-                    col_var.append('rgba(200,200,200,0.15)')
-        else:
-            col_vol = [C['gold']] * len(m)
-            col_var = [C['gold'] if row['sin_ant'] else (C['green'] if (pd.notna(row['var']) and row['var'] >= 0) else C['red'])
-                       for _, row in m.iterrows()]
+        # Colores var%
+        def _col_var_h(row):
+            if repre_sel:
+                if row['Vendedor'] != repre_sel:
+                    return 'rgba(200,200,200,0.12)'
+            if row['sin_ant']:      return C['gold']
+            if pd.isna(row['var']): return C['muted']
+            return C['green'] if row['var'] >= 0 else C['red']
 
-        var_display = [_cap_var(row['var'], row['sin_ant']) for _, row in m.iterrows()]
-        var_labels  = [_var(row['var'], row['sin_ant'], row['Total_a']) for _, row in m.iterrows()]
-        var_tpos    = ['inside' if row['sin_ant'] else 'outside' for _, row in m.iterrows()]
-        var_tcol    = ['#FFFFFF' if row['sin_ant'] else C['text'] for _, row in m.iterrows()]
+        def _col_vol_h(v):
+            if repre_sel:
+                return C['gold'] if v == repre_sel else 'rgba(201,168,76,0.18)'
+            return C['gold']
 
-        fig = make_subplots(rows=1, cols=2,
-                            subplot_titles=['Var % vs Año Anterior', 'Cajas Año Actual (% participación)'])
-        fig.add_trace(go.Bar(x=nombres, y=var_display, marker_color=col_var,
-                             text=var_labels,
-                             textposition=var_tpos,
-                             textfont=dict(size=12, color=var_tcol),
-                             hovertemplate='%{x}<br>Var: %{text}<extra></extra>'), row=1, col=1)
-        fig.add_trace(go.Bar(x=nombres, y=m['Total_a'], marker_color=col_vol,
-                             text=[f"{int(v):,}" for v in m['Total_a']],
-                             textposition='inside', insidetextanchor='middle',
-                             textfont=dict(size=10, color='#FFFFFF'),
-                             hovertemplate='%{x}<br>%{y:,.0f} cajas<extra></extra>'), row=1, col=2)
-        # % participación afuera de la barra de cajas
-        fig.add_trace(go.Scatter(
-            x=nombres, y=m['Total_a'],
-            text=[f"{p:.0f}%" for p in m['part']],
-            mode='text', textposition='top center',
-            textfont=dict(size=15, color=C['text']),
-            showlegend=False, hoverinfo='skip',
+        col_var = [_col_var_h(r) for _, r in m.iterrows()]
+        col_vol = [_col_vol_h(v) for v in m['Vendedor']]
+
+        var_display = [_cap_var(r['var'], r['sin_ant']) for _, r in m.iterrows()]
+        var_text    = [_var(r['var'], r['sin_ant'], r['Total_a']) for _, r in m.iterrows()]
+
+        fig = make_subplots(
+            rows=1, cols=2,
+            column_widths=[0.38, 0.62],
+            subplot_titles=['Variación % vs Año Anterior', 'Cajas Año Actual'],
+            shared_yaxes=True,
+        )
+
+        # ── Panel izquierdo: Var% horizontal divergente ──
+        fig.add_trace(go.Bar(
+            y=nombres,
+            x=var_display,
+            orientation='h',
+            marker_color=col_var,
+            marker_line_width=0,
+            text=var_text,
+            textposition='outside',
+            textfont=dict(size=11, color=C['text'], family=MONO),
+            cliponaxis=False,
+            hovertemplate='<b>%{y}</b><br>Var: %{text}<extra></extra>',
+        ), row=1, col=1)
+        # Línea de cero
+        fig.add_vline(x=0, line_width=1, line_color=C['muted'], line_dash='dot', row=1, col=1)
+
+        # ── Panel derecho: Cajas + participación ──
+        fig.add_trace(go.Bar(
+            y=nombres,
+            x=m['Total_a'],
+            orientation='h',
+            marker_color=col_vol,
+            marker_line_width=0,
+            text=[f"{int(v):,}" for v in m['Total_a']],
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=10, color='#FFFFFF', family=MONO),
+            hovertemplate='<b>%{y}</b><br>%{x:,.0f} cajas<extra></extra>',
         ), row=1, col=2)
-        fig.add_vline(x=0, line_width=1, line_color=C['muted'], line_dash='dot', col=1)
-        title = f'Representantes — Ranking | Filtro: {repre_sel}' if repre_sel else 'Representantes — Ranking y Variación'
-        _pl = {k:v for k,v in PL.items() if k != 'margin'}
-        fig.update_layout(**_pl, title=title, height=340, showlegend=False,
-                          margin=dict(l=30, r=20, t=46, b=70))
-        fig.update_xaxes(tickangle=-40, tickfont=dict(size=10))
-        fig.update_xaxes(range=[-VAR_CAP * 1.3, VAR_CAP * 1.3], row=1, col=1)
-        fig.update_yaxes(tickfont=dict(size=10))
+        # % participación fuera de la barra, alineado a la derecha
+        fig.add_trace(go.Scatter(
+            y=nombres,
+            x=m['Total_a'],
+            text=[f"  {p:.0f}%" for p in m['part']],
+            mode='text',
+            textposition='middle right',
+            textfont=dict(size=11, color=C['text']),
+            showlegend=False,
+            hoverinfo='skip',
+        ), row=1, col=2)
+
+        title = f'Representantes — Ranking | {repre_sel}' if repre_sel else 'Representantes — Ranking y Variación'
+        _pl = {k: v for k, v in PL.items() if k != 'margin'}
+        fig.update_layout(
+            **_pl, title=title, height=altura, showlegend=False,
+            margin=dict(l=10, r=60, t=46, b=20),
+        )
+        # Eje X izquierdo: rango centrado en 0
+        cap = VAR_CAP * 1.25
+        fig.update_xaxes(range=[-cap, cap], tickfont=dict(size=9), row=1, col=1)
+        # Eje Y: nombres de representante
+        fig.update_yaxes(tickfont=dict(size=11), automargin=True)
+        # Eje X derecho: sin cero forzado, margen para el % afuera
+        fig.update_xaxes(tickfont=dict(size=9), row=1, col=2)
         return fig
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error: {e}')
