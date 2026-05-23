@@ -20,10 +20,12 @@ warnings.filterwarnings('ignore')
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                     Table, TableStyle, HRFlowable)
+                                     Table, TableStyle, HRFlowable, KeepTogether)
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors as rl_colors
     from reportlab.lib.units import cm
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    from reportlab.pdfgen import canvas as _rl_canvas
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
@@ -1240,455 +1242,542 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     ], style={'marginBottom':'16px'})
 
 
+# ── Sistema de diseño PDF ejecutivo ───────────────────────────────────────────
+
+def _pdf_ds():
+    """Design system unificado para todos los PDFs ejecutivos."""
+    G  = rl_colors.HexColor('#B8972A')
+    R  = rl_colors.HexColor('#B03020')
+    GR = rl_colors.HexColor('#217A45')
+    BK = rl_colors.HexColor('#111111')
+    MU = rl_colors.HexColor('#666666')
+    LG = rl_colors.HexColor('#F7F7F4')
+    WH = rl_colors.white
+    return {
+        'sec':   ParagraphStyle('_ps', fontSize=7.5, textColor=G, fontName='Helvetica-Bold',
+                                spaceBefore=14, spaceAfter=4, leading=10, wordWrap='LTR'),
+        'body':  ParagraphStyle('_pb', fontSize=8.5, textColor=BK, fontName='Helvetica',
+                                leading=13, spaceAfter=3),
+        'small': ParagraphStyle('_psm', fontSize=7, textColor=MU, fontName='Helvetica',
+                                leading=10, spaceAfter=2),
+        'alert': ParagraphStyle('_pa', fontSize=8.5, textColor=R, fontName='Helvetica',
+                                leading=13, spaceAfter=3),
+        'ok':    ParagraphStyle('_po', fontSize=8.5, textColor=GR, fontName='Helvetica',
+                                leading=13, spaceAfter=3),
+        'G': G, 'R': R, 'GR': GR, 'BK': BK, 'MU': MU, 'LG': LG, 'WH': WH,
+    }
+
+def _pdf_page_cb(titulo_doc, filtro_txt):
+    """Callback para header y footer en cada página del PDF."""
+    def _draw(c, doc):
+        c.saveState()
+        W, H = A4
+        L, R_margin = 1.5*cm, 1.5*cm
+
+        # ── Header band ──────────────────────────────────────────────────────
+        c.setFillColor(rl_colors.HexColor('#0D0D0D'))
+        c.rect(0, H - 2.1*cm, W, 2.1*cm, fill=1, stroke=0)
+        # Línea dorada inferior del header
+        c.setFillColor(rl_colors.HexColor('#B8972A'))
+        c.rect(0, H - 2.1*cm - 1.5, W, 1.5, fill=1, stroke=0)
+        # Nombre empresa (izquierda)
+        c.setFont('Helvetica-Bold', 11)
+        c.setFillColor(rl_colors.white)
+        c.drawString(L, H - 1.3*cm, 'CATENA ZAPATA')
+        # Título del reporte (derecha)
+        c.setFont('Helvetica', 8.5)
+        c.setFillColor(rl_colors.HexColor('#BBBBBB'))
+        c.drawRightString(W - R_margin, H - 1.3*cm, titulo_doc)
+        # Filtro + fecha (segunda línea, pequeño)
+        c.setFont('Helvetica', 6.5)
+        c.setFillColor(rl_colors.HexColor('#888888'))
+        fecha_str = datetime.now().strftime('%d/%m/%Y')
+        c.drawString(L, H - 1.85*cm, f"{filtro_txt}   ·   {fecha_str}")
+
+        # ── Footer ───────────────────────────────────────────────────────────
+        c.setStrokeColor(rl_colors.HexColor('#CCCCCC'))
+        c.setLineWidth(0.4)
+        c.line(L, 1.35*cm, W - R_margin, 1.35*cm)
+        c.setFont('Helvetica', 6.5)
+        c.setFillColor(rl_colors.HexColor('#999999'))
+        c.drawString(L, 0.9*cm, 'CATENA ZAPATA  —  INFORMACIÓN CONFIDENCIAL')
+        c.drawRightString(W - R_margin, 0.9*cm, f'Página {doc.page}')
+
+        c.restoreState()
+    return _draw
+
+def _pdf_tbl(data, widths, var_cols=(), right_cols=(), center_cols=(), zebra=True):
+    """Tabla ejecutiva: header oscuro, líneas horizontales, sin grilla vertical."""
+    if not data or len(data) < 1:
+        return Spacer(1, 0.1*cm)
+    t = Table(data, colWidths=widths, repeatRows=1)
+    BK  = rl_colors.HexColor('#1A1A1A')
+    LG  = rl_colors.HexColor('#F7F7F4')
+    SEP = rl_colors.HexColor('#E0E0DA')
+    cmds = [
+        # ── Encabezado ──
+        ('BACKGROUND',    (0,0), (-1,0), BK),
+        ('TEXTCOLOR',     (0,0), (-1,0), rl_colors.white),
+        ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0,0), (-1,0), 7.5),
+        ('TOPPADDING',    (0,0), (-1,0), 7),
+        ('BOTTOMPADDING', (0,0), (-1,0), 7),
+        ('LEFTPADDING',   (0,0), (-1,0), 7),
+        ('RIGHTPADDING',  (0,0), (-1,0), 7),
+        # ── Filas de datos ──
+        ('FONTNAME',      (0,1), (-1,-1), 'Helvetica'),
+        ('FONTSIZE',      (0,1), (-1,-1), 8),
+        ('TEXTCOLOR',     (0,1), (-1,-1), rl_colors.HexColor('#1A1A1A')),
+        ('TOPPADDING',    (0,1), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,1), (-1,-1), 5),
+        ('LEFTPADDING',   (0,1), (-1,-1), 7),
+        ('RIGHTPADDING',  (0,1), (-1,-1), 7),
+        # Solo líneas horizontales
+        ('LINEBELOW',     (0,0), (-1,0),  0.3, SEP),
+        ('LINEBELOW',     (0,1), (-1,-1), 0.3, SEP),
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+    ]
+    # Zebra
+    if zebra:
+        for ri in range(1, len(data)):
+            bg = LG if ri % 2 == 0 else rl_colors.white
+            cmds.append(('BACKGROUND', (0,ri), (-1,ri), bg))
+    # Alineación numérica
+    for col in right_cols:
+        cmds.append(('ALIGN', (col,0), (col,-1), 'RIGHT'))
+    for col in center_cols:
+        cmds.append(('ALIGN', (col,0), (col,-1), 'CENTER'))
+    # Color variaciones
+    R  = rl_colors.HexColor('#B03020')
+    GR = rl_colors.HexColor('#217A45')
+    for col in var_cols:
+        for ri, row in enumerate(data[1:], 1):
+            val = row[col] if col < len(row) else ''
+            if isinstance(val, str) and val not in ('—', '', 'NUEVO'):
+                raw = val.replace('+','').replace('%','').strip()
+                try:
+                    pct = float(raw)
+                    color = GR if pct >= 0 else R
+                    cmds.append(('TEXTCOLOR', (col,ri), (col,ri), color))
+                    cmds.append(('FONTNAME',  (col,ri), (col,ri), 'Helvetica-Bold'))
+                except ValueError:
+                    pass
+    t.setStyle(TableStyle(cmds))
+    return t
+
+def _pdf_kpi_tiles(tiles):
+    """tiles = [(label, valor, color_hex), ...]  — fila de métricas destacadas."""
+    ds = _pdf_ds()
+    cells = []
+    for label, valor, color_hex in tiles:
+        lbl_st = ParagraphStyle('_kl', fontSize=6.5, textColor=rl_colors.HexColor('#888888'),
+                                fontName='Helvetica', leading=9, alignment=TA_CENTER)
+        val_st = ParagraphStyle('_kv', fontSize=17, textColor=rl_colors.HexColor(color_hex),
+                                fontName='Helvetica-Bold', leading=21, alignment=TA_CENTER)
+        cells.append([Paragraph(label.upper(), lbl_st), Paragraph(str(valor), val_st)])
+
+    # Cada tile es una columna de 2 filas (label + valor) — armar como tabla interna
+    tile_tbls = []
+    for label, valor, color_hex in tiles:
+        lbl_st = ParagraphStyle(f'_kl{id(label)}', fontSize=6.5,
+                                textColor=rl_colors.HexColor('#999999'),
+                                fontName='Helvetica', leading=9, alignment=TA_CENTER)
+        val_st = ParagraphStyle(f'_kv{id(label)}', fontSize=18,
+                                textColor=rl_colors.HexColor(color_hex),
+                                fontName='Helvetica-Bold', leading=22, alignment=TA_CENTER)
+        inner = Table(
+            [[Paragraph(valor, val_st)], [Paragraph(label.upper(), lbl_st)]],
+            colWidths=[None]
+        )
+        inner.setStyle(TableStyle([
+            ('ALIGN',        (0,0), (-1,-1), 'CENTER'),
+            ('TOPPADDING',   (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING',(0,0), (-1,-1), 6),
+        ]))
+        tile_tbls.append(inner)
+
+    n = len(tile_tbls)
+    W_page = 18*cm
+    tile_w = W_page / n
+    outer = Table([tile_tbls], colWidths=[tile_w]*n)
+    outer.setStyle(TableStyle([
+        ('BACKGROUND',    (0,0), (-1,-1), rl_colors.HexColor('#F7F7F4')),
+        ('LINEAFTER',     (0,0), (-2,-1), 0.5, rl_colors.HexColor('#DDDDDA')),
+        ('TOPPADDING',    (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING',   (0,0), (-1,-1), 0),
+        ('RIGHTPADDING',  (0,0), (-1,-1), 0),
+        ('BOX',           (0,0), (-1,-1), 0.5, rl_colors.HexColor('#DDDDDA')),
+    ]))
+    return outer
+
+def _pdf_section(txt, ds):
+    """Título de sección dorado con línea fina."""
+    return KeepTogether([
+        HRFlowable(width='100%', thickness=0.4,
+                   color=rl_colors.HexColor('#DDDDDA'), spaceAfter=2),
+        Paragraph(txt, ds['sec']),
+    ])
+
+def _pdf_alert_row(nivel, msg, ds):
+    badges = {'CRITICO': ('#B03020','CRÍTICO'), 'ALERTA': ('#B36A00','ALERTA'),
+              'OK': ('#217A45','OK'), 'INFO': ('#555555','INFO')}
+    bg, lbl = badges.get(nivel, ('#555555', nivel))
+    badge_st = ParagraphStyle(f'_ba{nivel}', fontSize=6.5, fontName='Helvetica-Bold',
+                              textColor=rl_colors.white, alignment=TA_CENTER)
+    msg_st = ParagraphStyle(f'_bm{nivel}', fontSize=8, fontName='Helvetica',
+                            textColor=rl_colors.HexColor('#1A1A1A'), leading=11)
+    badge_tbl = Table([[Paragraph(lbl, badge_st)]], colWidths=[1.4*cm])
+    badge_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (0,0), (-1,-1), rl_colors.HexColor(bg)),
+        ('TOPPADDING',    (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING',   (0,0), (-1,-1), 4),
+        ('RIGHTPADDING',  (0,0), (-1,-1), 4),
+    ]))
+    row_tbl = Table([[badge_tbl, Paragraph(msg, msg_st)]], colWidths=[1.6*cm, 16.4*cm])
+    row_tbl.setStyle(TableStyle([
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING',    (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LINEBELOW',     (0,0), (-1,-1), 0.3, rl_colors.HexColor('#E8E8E4')),
+    ]))
+    return row_tbl
+
+
 # ── PDF por representante ──────────────────────────────────────────────────────
 
 def generar_pdf_repre(repre_sel):
     if not PDF_AVAILABLE:
         return None
-
+    ds = _pdf_ds()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=2*cm, rightMargin=2*cm,
-                            topMargin=2*cm, bottomMargin=2*cm)
-
-    styles = getSampleStyleSheet()
-    titulo   = ParagraphStyle('titulo',   parent=styles['Heading1'],
-                               textColor=rl_colors.HexColor('#8B6914'), fontSize=18, spaceAfter=6)
-    subtitulo= ParagraphStyle('subtitulo',parent=styles['Heading2'],
-                               textColor=rl_colors.HexColor('#444444'), fontSize=10, spaceAfter=4)
-    cuerpo   = ParagraphStyle('cuerpo',   parent=styles['Normal'],
-                               textColor=rl_colors.HexColor('#1A1A1A'), fontSize=9, spaceAfter=3)
-    alerta_s = ParagraphStyle('alerta',   parent=styles['Normal'],
-                               textColor=rl_colors.HexColor('#C0392B'), fontSize=9, spaceAfter=3)
-    ok_s     = ParagraphStyle('ok',       parent=styles['Normal'],
-                               textColor=rl_colors.HexColor('#1E7A40'), fontSize=9, spaceAfter=3)
-
+                            leftMargin=1.5*cm, rightMargin=1.5*cm,
+                            topMargin=2.5*cm, bottomMargin=1.8*cm)
+    filtro_txt = repre_sel or "Región completa"
+    cb = _pdf_page_cb(f"Informe de Representante", filtro_txt)
     story = []
 
-    # Encabezado
-    story.append(Paragraph("CATENA ZAPATA", titulo))
-    story.append(Paragraph(f"Reporte de Representante — {repre_sel}", subtitulo))
-    story.append(Paragraph(f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", cuerpo))
-    story.append(HRFlowable(width="100%", thickness=1, color=rl_colors.HexColor('#C9A84C')))
-    story.append(Spacer(1, 0.4*cm))
-
-    # KPIs del representante
+    # ── KPIs destacados ───────────────────────────────────────────────────────
     try:
-        df_r = DFS['x repre']
-        df_r = df_r[df_r['Vendedor'] == repre_sel]
+        df_r = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
         act = get_ind(df_r, 'Año Actual Cajas', ['Vendedor','flia'])
         ant = get_ind(df_r, 'Año Anterior Cajas', ['Vendedor','flia'])
-        tot_a = act['Total'].sum()
-        tot_b = ant['Total'].sum()
+        tot_a = act['Total'].sum(); tot_b = ant['Total'].sum()
         var_t = (tot_a - tot_b) / tot_b * 100 if tot_b else 0
-
-        # Ranking
         all_act = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
-        ranking_df = all_act.groupby('Vendedor')['Total'].sum().sort_values(ascending=False).reset_index()
-        ranking_df['rank'] = range(1, len(ranking_df)+1)
-        rank = ranking_df[ranking_df['Vendedor']==repre_sel]['rank'].iloc[0] if repre_sel in ranking_df['Vendedor'].values else '—'
-
+        rk_df = all_act.groupby('Vendedor')['Total'].sum().rank(ascending=False, method='min')
+        rank = int(rk_df.get(repre_sel, 0))
         sign = '+' if var_t >= 0 else ''
-        story.append(Paragraph("RESUMEN EJECUTIVO", subtitulo))
-        kpi_data = [
-            ['Métrica', 'Valor'],
-            ['Cajas Año Actual', f"{int(tot_a):,}"],
-            ['Cajas Año Anterior', f"{int(tot_b):,}"],
-            ['Variación %', f"{sign}{var_t:.0f}%"],
-            ['Ranking Nacional', f"#{rank} de {len(REPRESENTANTES)}"],
-        ]
-        t = Table(kpi_data, colWidths=[8*cm, 6*cm])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), rl_colors.HexColor('#C9A84C')),
-            ('TEXTCOLOR',  (0,0), (-1,0), rl_colors.black),
-            ('FONTSIZE',   (0,0), (-1,-1), 9),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [rl_colors.white, rl_colors.HexColor('#F5F5F5')]),
-            ('TEXTCOLOR',  (0,1), (-1,-1), rl_colors.HexColor('#1A1A1A')),
-            ('GRID',       (0,0), (-1,-1), 0.5, rl_colors.HexColor('#CCCCCC')),
-            ('PADDING',    (0,0), (-1,-1), 6),
-            ('ALIGN',      (1,0), (1,-1), 'RIGHT'),
+        var_col = '#217A45' if var_t >= 0 else '#B03020'
+        story.append(_pdf_kpi_tiles([
+            ('Cajas Año Actual',   f"{int(tot_a):,}",           '#111111'),
+            ('Cajas Año Anterior', f"{int(tot_b):,}",           '#555555'),
+            ('Variación %',        f"{sign}{var_t:.1f}%",       var_col),
+            ('Ranking Nacional',   f"#{rank} / {len(REPRESENTANTES)}", '#B8972A'),
         ]))
-        story.append(t)
-        story.append(Spacer(1, 0.5*cm))
+        story.append(Spacer(1, 0.4*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error generando KPIs: {e}", alerta_s))
+        story.append(Paragraph(f"Error KPIs: {e}", ds['alert']))
 
-    # Evolución mensual
+    # ── Evolución mensual ─────────────────────────────────────────────────────
+    story.append(_pdf_section("Evolución Mensual", ds))
     try:
-        story.append(Paragraph("EVOLUCIÓN MENSUAL", subtitulo))
         df_r2 = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
         act2  = get_ind(df_r2, 'Año Actual Cajas', ['Vendedor','flia'])
-        # Agrupar todos los meses
-        mes_data = [['Mes', 'Cajas Año Actual']]
+        ant2  = get_ind(df_r2, 'Año Anterior Cajas', ['Vendedor','flia'])
+        rows = [['Mes', 'Año Actual', 'Año Anterior', 'Variación %']]
         for m in MC:
             if m in act2.columns:
-                val = pd.to_numeric(act2[m], errors='coerce').sum()
-                mes_data.append([m, f"{int(val):,}" if pd.notna(val) else '—'])
-        t2 = Table(mes_data, colWidths=[4*cm, 6*cm])
-        t2.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), rl_colors.HexColor('#C9A84C')),
-            ('TEXTCOLOR',  (0,0), (-1,0), rl_colors.black),
-            ('FONTSIZE',   (0,0), (-1,-1), 8),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [rl_colors.white, rl_colors.HexColor('#F5F5F5')]),
-            ('TEXTCOLOR',  (0,1), (-1,-1), rl_colors.HexColor('#1A1A1A')),
-            ('GRID',       (0,0), (-1,-1), 0.5, rl_colors.HexColor('#CCCCCC')),
-            ('PADDING',    (0,0), (-1,-1), 5),
-            ('ALIGN',      (1,0), (1,-1), 'RIGHT'),
-        ]))
-        story.append(t2)
-        story.append(Spacer(1, 0.5*cm))
+                va = pd.to_numeric(act2[m], errors='coerce').sum()
+                vb = pd.to_numeric(ant2[m], errors='coerce').sum() if m in ant2.columns else 0
+                vp = (va - vb) / vb * 100 if vb else 0
+                s = '+' if vp >= 0 else ''
+                rows.append([m, f"{int(va):,}", f"{int(vb):,}", f"{s}{vp:.0f}%"])
+        story.append(_pdf_tbl(rows, [3*cm, 5*cm, 5*cm, 5*cm],
+                              var_cols=(3,), right_cols=(1,2,3)))
+        story.append(Spacer(1, 0.3*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error evolución: {e}", alerta_s))
+        story.append(Paragraph(f"Error evolución: {e}", ds['alert']))
 
-    # Red flags del representante
+    # ── Variación por familia ─────────────────────────────────────────────────
+    story.append(_pdf_section("Variación por Familia vs Año Anterior", ds))
     try:
-        story.append(Paragraph("ALERTAS DEL REPRESENTANTE", subtitulo))
         rv = get_ind(DFS['x repre'], 'Var %', ['Vendedor','flia'])
         rv_r = rv[rv['Vendedor'] == repre_sel].copy()
         rv_r['pct'] = rv_r['Total'] * 100
-        rv_r = rv_r.dropna(subset=['pct'])
-
-        if rv_r.empty:
-            story.append(Paragraph("Sin datos de variación disponibles.", cuerpo))
-        else:
-            for _, row in rv_r.sort_values('pct').iterrows():
-                sign2 = '+' if row['pct'] >= 0 else ''
-                style_use = ok_s if row['pct'] >= 0 else alerta_s
-                story.append(Paragraph(f"• {row['flia']}: {sign2}{row['pct']:.0f}%", style_use))
-        story.append(Spacer(1, 0.5*cm))
+        rv_r = rv_r.dropna(subset=['pct']).sort_values('pct')
+        act_f = get_ind(df_r, 'Año Actual Cajas', ['Vendedor','flia']).groupby('flia')['Total'].sum()
+        ant_f = get_ind(df_r, 'Año Anterior Cajas', ['Vendedor','flia']).groupby('flia')['Total'].sum()
+        rows = [['Familia', 'Cajas Actual', 'Cajas Anterior', 'Variación %']]
+        for _, row in rv_r.iterrows():
+            s = '+' if row['pct'] >= 0 else ''
+            a_val = int(act_f.get(row['flia'], 0))
+            b_val = int(ant_f.get(row['flia'], 0))
+            rows.append([row['flia'], f"{a_val:,}", f"{b_val:,}", f"{s}{row['pct']:.0f}%"])
+        story.append(_pdf_tbl(rows, [6*cm, 4*cm, 4*cm, 4*cm],
+                              var_cols=(3,), right_cols=(1,2,3)))
+        story.append(Spacer(1, 0.3*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error alertas: {e}", alerta_s))
+        story.append(Paragraph(f"Error familias: {e}", ds['alert']))
 
-    # Top/bottom clientes
+    # ── Mix por canal ─────────────────────────────────────────────────────────
+    story.append(_pdf_section("Mix por Canal de Venta", ds))
     try:
-        story.append(Paragraph("TOP CLIENTES — VARIACIÓN", subtitulo))
-        if 'x cliente' in DFS:
-            cli = DFS['x cliente']
-            cli = cli[cli['Vendedor'] == repre_sel]
-            act_c = get_ind(cli, 'Año Actual Cajas', ['Vendedor','Cliente','flia'])
-            ant_c = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente','flia'])
-            m = act_c.merge(ant_c, on=['Vendedor','Cliente','flia'], suffixes=('_a','_b'))
-            m = m[m['Total_b'] > 0]
-            m['dif'] = m['Total_a'] - m['Total_b']
-            m['var_pct'] = (m['dif'] / m['Total_b']) * 100
-
-            cli_data = [['Cliente', 'Familia', 'Cajas Act', 'Var%']]
-            for _, row in m.nlargest(5, 'dif').iterrows():
-                sign3 = '+' if row['var_pct'] >= 0 else ''
-                cli_data.append([str(row['Cliente'])[:30], str(row['flia'])[:15],
-                                  f"{int(row['Total_a']):,}", f"{sign3}{row['var_pct']:.0f}%"])
-            for _, row in m.nsmallest(5, 'dif').iterrows():
-                sign3 = '+' if row['var_pct'] >= 0 else ''
-                cli_data.append([str(row['Cliente'])[:30], str(row['flia'])[:15],
-                                  f"{int(row['Total_a']):,}", f"{sign3}{row['var_pct']:.0f}%"])
-
-            t3 = Table(cli_data, colWidths=[7*cm, 3.5*cm, 3*cm, 2.5*cm])
-            t3.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), rl_colors.HexColor('#C9A84C')),
-                ('TEXTCOLOR',  (0,0), (-1,0), rl_colors.black),
-                ('FONTSIZE',   (0,0), (-1,-1), 7.5),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [rl_colors.white, rl_colors.HexColor('#F5F5F5')]),
-                ('TEXTCOLOR',  (0,1), (-1,-1), rl_colors.HexColor('#1A1A1A')),
-                ('GRID',       (0,0), (-1,-1), 0.5, rl_colors.HexColor('#CCCCCC')),
-                ('PADDING',    (0,0), (-1,-1), 4),
-                ('ALIGN',      (2,0), (3,-1), 'RIGHT'),
-            ]))
-            story.append(t3)
+        df_c = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor'] == repre_sel]
+        ac = get_ind(df_c, 'Año Actual Cajas', ['Canal','flia']).groupby('Canal')['Total'].sum().reset_index()
+        bc = get_ind(df_c, 'Año Anterior Cajas', ['Canal','flia']).groupby('Canal')['Total'].sum().reset_index()
+        mc2 = ac.merge(bc, on='Canal', suffixes=('_a','_b'))
+        mc2['pct'] = mc2['Total_a'] / mc2['Total_a'].sum() * 100
+        mc2['var'] = (mc2['Total_a'] - mc2['Total_b']) / mc2['Total_b'].replace(0, np.nan) * 100
+        mc2 = mc2[mc2['Total_a'] > 0].sort_values('Total_a', ascending=False)
+        rows = [['Canal', 'Cajas Actual', 'Participación %', 'Variación %']]
+        for _, r in mc2.iterrows():
+            s = '+' if pd.notna(r['var']) and r['var'] >= 0 else ''
+            rows.append([r['Canal'], f"{int(r['Total_a']):,}",
+                         f"{r['pct']:.0f}%", f"{s}{r['var']:.0f}%" if pd.notna(r['var']) else '—'])
+        story.append(_pdf_tbl(rows, [6*cm, 4*cm, 4*cm, 4*cm],
+                              var_cols=(3,), right_cols=(1,2,3)))
+        story.append(Spacer(1, 0.3*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error clientes: {e}", alerta_s))
+        story.append(Paragraph(f"Error canales: {e}", ds['alert']))
 
-    doc.build(story)
+    # ── Top clientes ──────────────────────────────────────────────────────────
+    if 'x cliente' in DFS:
+        story.append(_pdf_section("Clientes — Mayor Variación", ds))
+        try:
+            cli = DFS['x cliente'][DFS['x cliente']['Vendedor'] == repre_sel]
+            ac2 = get_ind(cli, 'Año Actual Cajas', ['Vendedor','Cliente','flia'])
+            an2 = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente','flia'])
+            mc3 = ac2.merge(an2, on=['Vendedor','Cliente','flia'], suffixes=('_a','_b'))
+            mc3 = mc3[mc3['Total_b'] > 0]
+            mc3['dif'] = mc3['Total_a'] - mc3['Total_b']
+            mc3['vp']  = mc3['dif'] / mc3['Total_b'] * 100
+
+            rows_up = [['Cliente', 'Familia', 'Cajas Act.', 'Δ Cajas', 'Var %']]
+            for _, r in mc3.nlargest(8, 'dif').iterrows():
+                s = '+' if r['vp'] >= 0 else ''
+                rows_up.append([str(r['Cliente'])[:28], str(r['flia'])[:16],
+                                 f"{int(r['Total_a']):,}", f"+{int(r['dif']):,}",
+                                 f"{s}{r['vp']:.0f}%"])
+            story.append(Paragraph("Mayor crecimiento", ds['small']))
+            story.append(_pdf_tbl(rows_up, [5.5*cm, 3.5*cm, 3*cm, 3*cm, 3*cm],
+                                  var_cols=(4,), right_cols=(2,3,4)))
+
+            story.append(Spacer(1, 0.3*cm))
+            rows_dn = [['Cliente', 'Familia', 'Cajas Act.', 'Δ Cajas', 'Var %']]
+            for _, r in mc3.nsmallest(8, 'dif').iterrows():
+                s = '+' if r['vp'] >= 0 else ''
+                rows_dn.append([str(r['Cliente'])[:28], str(r['flia'])[:16],
+                                 f"{int(r['Total_a']):,}", f"{int(r['dif']):,}",
+                                 f"{s}{r['vp']:.0f}%"])
+            story.append(Paragraph("Mayor caída", ds['small']))
+            story.append(_pdf_tbl(rows_dn, [5.5*cm, 3.5*cm, 3*cm, 3*cm, 3*cm],
+                                  var_cols=(4,), right_cols=(2,3,4)))
+        except Exception as e:
+            story.append(Paragraph(f"Error clientes: {e}", ds['alert']))
+
+    doc.build(story, onFirstPage=cb, onLaterPages=cb)
     buf.seek(0)
     return buf.read()
 
 
 def generar_pdf_resumen(flia_sel=None, repre_sel=None, canal_sel=None):
-    """PDF ejecutivo A4 — resumen de ventas de la selección actual."""
+    """PDF ejecutivo A4 — resumen completo de la selección activa."""
     if not PDF_AVAILABLE:
         return None
-
+    ds = _pdf_ds()
+    filtro_txt = " | ".join(filter(None, [flia_sel, repre_sel, canal_sel])) or "Región completa"
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=1.8*cm, rightMargin=1.8*cm,
-                            topMargin=1.8*cm, bottomMargin=1.8*cm)
-
-    W, _ = A4
-
-    def make_styles():
-        s = getSampleStyleSheet()
-        gold  = rl_colors.HexColor('#8B6914')
-        red   = rl_colors.HexColor('#C0392B')
-        green = rl_colors.HexColor('#1E7A40')
-        dark  = rl_colors.HexColor('#1A1A1A')
-        light = rl_colors.HexColor('#1A1A1A')
-        muted = rl_colors.HexColor('#555555')
-        return {
-            'h1':    ParagraphStyle('h1',    fontSize=20, textColor=gold,   spaceAfter=2,  fontName='Helvetica-Bold'),
-            'h2':    ParagraphStyle('h2',    fontSize=11, textColor=muted,  spaceAfter=8,  fontName='Helvetica'),
-            'sec':   ParagraphStyle('sec',   fontSize=8,  textColor=gold,   spaceAfter=4,  fontName='Helvetica-Bold',
-                                    textTransform='uppercase', spaceBefore=10),
-            'body':  ParagraphStyle('body',  fontSize=8,  textColor=dark,   spaceAfter=2,  fontName='Helvetica',
-                                    leading=12),
-            'alert': ParagraphStyle('alert', fontSize=8,  textColor=red,    spaceAfter=2,  fontName='Helvetica'),
-            'ok':    ParagraphStyle('ok',    fontSize=8,  textColor=green,  spaceAfter=2,  fontName='Helvetica'),
-            'dark':  dark, 'light': light, 'gold': gold, 'red': red, 'green': green, 'muted': muted,
-        }
-
-    def tbl(data, col_widths, header_row=True):
-        t = Table(data, colWidths=col_widths, repeatRows=1 if header_row else 0)
-        style_cmds = [
-            ('FONTSIZE',  (0,0), (-1,-1), 8),
-            ('FONTNAME',  (0,0), (-1,-1), 'Helvetica'),
-            ('GRID',      (0,0), (-1,-1), 0.4, rl_colors.HexColor('#CCCCCC')),
-            ('PADDING',   (0,0), (-1,-1), 5),
-            ('VALIGN',    (0,0), (-1,-1), 'MIDDLE'),
-            ('ROWBACKGROUNDS', (0, 1 if header_row else 0), (-1,-1),
-             [rl_colors.white, rl_colors.HexColor('#F5F5F5')]),
-            ('TEXTCOLOR', (0, 1 if header_row else 0), (-1,-1), rl_colors.HexColor('#1A1A1A')),
-        ]
-        if header_row:
-            style_cmds += [
-                ('BACKGROUND', (0,0), (-1,0), rl_colors.HexColor('#C9A84C')),
-                ('TEXTCOLOR',  (0,0), (-1,0), rl_colors.black),
-                ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
-            ]
-        t.setStyle(TableStyle(style_cmds))
-        return t
-
-    st = make_styles()
+                            leftMargin=1.5*cm, rightMargin=1.5*cm,
+                            topMargin=2.5*cm, bottomMargin=1.8*cm)
+    cb = _pdf_page_cb("Informe de Ventas — Jefatura Nacional", filtro_txt)
     story = []
 
-    # ── Encabezado ──
-    filtro_txt = " | ".join(filter(None, [flia_sel, repre_sel, canal_sel])) or "Región completa"
-    story.append(Paragraph("CATENA ZAPATA", st['h1']))
-    story.append(Paragraph("Reporte de Ventas — Jefatura Nacional de Ventas", st['h2']))
-    story.append(Paragraph(f"Filtro activo: {filtro_txt}   •   {datetime.now().strftime('%d/%m/%Y %H:%M')}", st['h2']))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=st['gold'], spaceAfter=8))
-
-    # ── KPIs ──
-    story.append(Paragraph("RESUMEN EJECUTIVO", st['sec']))
+    # ── KPIs destacados ───────────────────────────────────────────────────────
     try:
-        kpi_vals = {}
         if canal_sel and repre_sel:
             df_k = DFS['x repre x canal']
-            df_k = df_k[df_k['Canal'] == canal_sel]
-            df_k = df_k[df_k['Vendedor'] == repre_sel]
+            df_k = df_k[(df_k['Canal']==canal_sel) & (df_k['Vendedor']==repre_sel)]
             act_k = get_ind(df_k, 'Año Actual Cajas', ['Vendedor','flia'])
             ant_k = get_ind(df_k, 'Año Anterior Cajas', ['Vendedor','flia'])
         elif canal_sel:
-            df_k = DFS['x flia x canal'][DFS['x flia x canal']['Canal'] == canal_sel]
+            df_k = DFS['x flia x canal'][DFS['x flia x canal']['Canal']==canal_sel]
             act_k = get_ind(df_k, 'Año Actual Cajas', ['flia','Canal'])
             ant_k = get_ind(df_k, 'Año Anterior Cajas', ['flia','Canal'])
         elif repre_sel:
-            df_k = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
+            df_k = DFS['x repre'][DFS['x repre']['Vendedor']==repre_sel]
             act_k = get_ind(df_k, 'Año Actual Cajas', ['Vendedor','flia'])
             ant_k = get_ind(df_k, 'Año Anterior Cajas', ['Vendedor','flia'])
         else:
             act_k = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'])
             ant_k = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'])
         if flia_sel:
-            act_k = act_k[act_k['flia'] == flia_sel]
-            ant_k = ant_k[ant_k['flia'] == flia_sel]
+            act_k = act_k[act_k['flia']==flia_sel]
+            ant_k = ant_k[ant_k['flia']==flia_sel]
         tot_a = act_k['Total'].sum(); tot_b = ant_k['Total'].sum()
         var_t = (tot_a - tot_b) / tot_b * 100 if tot_b else 0
-        sign  = '+' if var_t >= 0 else ''
-
-        kpi_data = [
-            ['Métrica', 'Año Actual', 'Año Anterior', 'Variación'],
-            ['Cajas Totales', f"{int(tot_a):,}", f"{int(tot_b):,}", f"{sign}{var_t:.0f}%"],
-        ]
-        story.append(tbl(kpi_data, [5*cm, 3.5*cm, 3.5*cm, 3*cm]))
-        story.append(Spacer(1, 0.3*cm))
+        sign = '+' if var_t >= 0 else ''
+        var_col = '#217A45' if var_t >= 0 else '#B03020'
+        pend_tot = 0
+        if 'pend' in DFS:
+            dp = DFS['pend'].copy(); dp.columns = [c.strip() for c in dp.columns]
+            dp['Pedidos Pendientes'] = pd.to_numeric(dp['Pedidos Pendientes'], errors='coerce')
+            if repre_sel: dp = dp[dp['Vendedor'].str.strip()==repre_sel]
+            pend_tot = int(dp['Pedidos Pendientes'].sum())
+        n_reps = DFS['x repre']['Vendedor'].nunique() if 'x repre' in DFS else 0
+        n_flias = DFS['x flia']['flia'].nunique() if 'x flia' in DFS else 0
+        story.append(_pdf_kpi_tiles([
+            ('Cajas Año Actual',   f"{int(tot_a):,}",     '#111111'),
+            ('Cajas Año Anterior', f"{int(tot_b):,}",     '#555555'),
+            ('Variación %',        f"{sign}{var_t:.1f}%", var_col),
+            ('Pendientes',         f"{pend_tot:,}",       '#B03020' if pend_tot > 0 else '#555555'),
+        ]))
+        story.append(Spacer(1, 0.4*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error KPIs: {e}", st['alert']))
+        story.append(Paragraph(f"Error KPIs: {e}", ds['alert']))
 
-    # ── Top familias ──
-    story.append(Paragraph("TOP FAMILIAS POR VOLUMEN", st['sec']))
+    # ── Familias ─────────────────────────────────────────────────────────────
+    story.append(_pdf_section("Familias — Variación vs Año Anterior", ds))
     try:
         if repre_sel:
-            df_fam = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
-            act_f = get_ind(df_fam, 'Año Actual Cajas', ['Vendedor','flia'])
-            ant_f = get_ind(df_fam, 'Año Anterior Cajas', ['Vendedor','flia'])
-            act_f = act_f.groupby('flia')['Total'].sum().reset_index().rename(columns={'Total':'Total_a'})
-            ant_f = ant_f.groupby('flia')['Total'].sum().reset_index().rename(columns={'Total':'Total_b'})
-            mf = act_f.merge(ant_f, on='flia', how='outer').fillna(0)
+            src = DFS['x repre'][DFS['x repre']['Vendedor']==repre_sel]
+            af = get_ind(src, 'Año Actual Cajas', ['Vendedor','flia']).groupby('flia')['Total'].sum()
+            bf = get_ind(src, 'Año Anterior Cajas', ['Vendedor','flia']).groupby('flia')['Total'].sum()
         else:
-            act_f = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'])
-            ant_f = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'])
-            mf = act_f.merge(ant_f, on='flia', suffixes=('_a','_b'))
-        if flia_sel:
-            mf = mf[mf['flia'] == flia_sel]
-        mf['var'] = (mf['Total_a'] - mf['Total_b']) / mf['Total_b'].replace(0, np.nan) * 100
-        mf['part'] = mf['Total_a'] / mf['Total_a'].sum() * 100
-        mf = mf.sort_values('Total_a', ascending=False).head(10)
-
-        fam_hdr = [['Familia', 'Cajas Actual', 'Cajas Anterior', 'Var %', 'Part %']]
+            af = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia']).groupby('flia')['Total'].sum()
+            bf = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia']).groupby('flia')['Total'].sum()
+        mf = pd.DataFrame({'a':af,'b':bf}).reset_index().rename(columns={'index':'flia','flia':'flia'})
+        if 'flia' not in mf.columns:
+            mf.columns = ['flia','a','b']
+        if flia_sel: mf = mf[mf['flia']==flia_sel]
+        mf['var']  = (mf['a']-mf['b'])/mf['b'].replace(0,np.nan)*100
+        mf['part'] = mf['a']/mf['a'].sum()*100
+        mf = mf.sort_values('a', ascending=False)
+        rows = [['Familia','Cajas Actual','Cajas Anterior','Variación %','Part. %']]
         for _, r in mf.iterrows():
-            s = '+' if pd.notna(r['var']) and r['var'] >= 0 else ''
+            s = '+' if pd.notna(r['var']) and r['var']>=0 else ''
             vstr = f"{s}{r['var']:.0f}%" if pd.notna(r['var']) else '—'
-            fam_hdr.append([r['flia'], f"{int(r['Total_a']):,}", f"{int(r['Total_b']):,}",
-                             vstr, f"{r['part']:.0f}%"])
-        story.append(tbl(fam_hdr, [5*cm, 3*cm, 3*cm, 2.2*cm, 2.8*cm]))
-        story.append(Spacer(1, 0.3*cm))
+            rows.append([r['flia'], f"{int(r['a']):,}", f"{int(r['b']):,}", vstr, f"{r['part']:.0f}%"])
+        story.append(_pdf_tbl(rows, [5.5*cm,3.5*cm,3.5*cm,2.8*cm,2.7*cm],
+                              var_cols=(3,), right_cols=(1,2,3,4)))
+        story.append(Spacer(1,0.3*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error familias: {e}", st['alert']))
+        story.append(Paragraph(f"Error familias: {e}", ds['alert']))
 
-    # ── Top representantes ──
-    story.append(Paragraph("REPRESENTANTES — RANKING Y VARIACIÓN", st['sec']))
+    # ── Representantes ────────────────────────────────────────────────────────
+    story.append(_pdf_section("Representantes — Ranking y Variación", ds))
     try:
-        act_r = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
-        ant_r = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'])
-        if flia_sel:
-            act_r = act_r[act_r['flia'] == flia_sel]
-            ant_r = ant_r[ant_r['flia'] == flia_sel]
-        if repre_sel:
-            act_r = act_r[act_r['Vendedor'] == repre_sel]
-            ant_r = ant_r[ant_r['Vendedor'] == repre_sel]
-        ar = act_r.groupby('Vendedor')['Total'].sum().reset_index()
-        br = ant_r.groupby('Vendedor')['Total'].sum().reset_index()
-        mr = ar.merge(br, on='Vendedor', suffixes=('_a','_b'))
-        mr['var']  = (mr['Total_a'] - mr['Total_b']) / mr['Total_b'].replace(0, np.nan) * 100
-        mr['part'] = mr['Total_a'] / mr['Total_a'].sum() * 100
-        mr = mr.sort_values('Total_a', ascending=False)
-
-        rep_hdr = [['#', 'Representante', 'Cajas Actual', 'Var %', 'Participación']]
-        for i, (_, r) in enumerate(mr.iterrows(), 1):
-            s = '+' if r['var'] >= 0 else ''
-            rep_hdr.append([str(i), r['Vendedor'][:30], f"{int(r['Total_a']):,}",
-                             f"{s}{r['var']:.0f}%", f"{r['part']:.0f}%"])
-        story.append(tbl(rep_hdr, [0.8*cm, 6*cm, 3*cm, 2.2*cm, 2.5*cm]))
-        story.append(Spacer(1, 0.3*cm))
+        ar = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
+        br = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'])
+        if flia_sel: ar=ar[ar['flia']==flia_sel]; br=br[br['flia']==flia_sel]
+        if repre_sel: ar=ar[ar['Vendedor']==repre_sel]; br=br[br['Vendedor']==repre_sel]
+        a2=ar.groupby('Vendedor')['Total'].sum().reset_index()
+        b2=br.groupby('Vendedor')['Total'].sum().reset_index()
+        mr=a2.merge(b2,on='Vendedor',suffixes=('_a','_b'))
+        mr['var'] =(mr['Total_a']-mr['Total_b'])/mr['Total_b'].replace(0,np.nan)*100
+        mr['part']=mr['Total_a']/mr['Total_a'].sum()*100
+        mr=mr.sort_values('Total_a',ascending=False)
+        rows=[['#','Representante','Cajas Actual','Variación %','Participación %']]
+        for i,(_,r) in enumerate(mr.iterrows(),1):
+            s='+' if pd.notna(r['var']) and r['var']>=0 else ''
+            rows.append([str(i),r['Vendedor'][:32],f"{int(r['Total_a']):,}",
+                         f"{s}{r['var']:.0f}%" if pd.notna(r['var']) else '—',f"{r['part']:.0f}%"])
+        story.append(_pdf_tbl(rows,[1*cm,6*cm,3.5*cm,3*cm,4.5*cm],
+                              var_cols=(3,),right_cols=(2,3,4),center_cols=(0,)))
+        story.append(Spacer(1,0.3*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error representantes: {e}", st['alert']))
+        story.append(Paragraph(f"Error representantes: {e}", ds['alert']))
 
-    # ── Mix por canal ──
-    story.append(Paragraph("MIX POR CANAL", st['sec']))
+    # ── Mix por canal ─────────────────────────────────────────────────────────
+    story.append(_pdf_section("Mix por Canal de Venta", ds))
     try:
         if repre_sel:
-            df_c = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor'] == repre_sel]
-            act_c = get_ind(df_c, 'Año Actual Cajas', ['Canal','flia'])
+            df_c=DFS['x repre x canal'][DFS['x repre x canal']['Vendedor']==repre_sel]
+            act_c=get_ind(df_c,'Año Actual Cajas',['Canal','flia'])
+            ant_c=get_ind(df_c,'Año Anterior Cajas',['Canal','flia'])
         elif canal_sel:
-            df_c = DFS['x flia x canal'][DFS['x flia x canal']['Canal'] == canal_sel]
-            act_c = get_ind(df_c, 'Año Actual Cajas', ['Canal','flia'])
+            df_c=DFS['x flia x canal'][DFS['x flia x canal']['Canal']==canal_sel]
+            act_c=get_ind(df_c,'Año Actual Cajas',['Canal','flia'])
+            ant_c=get_ind(df_c,'Año Anterior Cajas',['Canal','flia'])
         else:
-            act_c = get_ind(DFS['x flia x canal'], 'Año Actual Cajas', ['Canal','flia'])
-        if flia_sel:
-            act_c = act_c[act_c['flia'] == flia_sel]
-        agg_c = act_c.groupby('Canal')['Total'].sum().reset_index()
-        agg_c['pct'] = agg_c['Total'] / agg_c['Total'].sum() * 100
-        agg_c = agg_c[agg_c['Total'] > 0].sort_values('Total', ascending=False)
-
-        can_hdr = [['Canal', 'Cajas', 'Participación %']]
-        for _, r in agg_c.iterrows():
-            can_hdr.append([r['Canal'], f"{int(r['Total']):,}", f"{r['pct']:.0f}%"])
-        story.append(tbl(can_hdr, [7*cm, 4*cm, 4*cm]))
-        story.append(Spacer(1, 0.3*cm))
+            act_c=get_ind(DFS['x flia x canal'],'Año Actual Cajas',['Canal','flia'])
+            ant_c=get_ind(DFS['x flia x canal'],'Año Anterior Cajas',['Canal','flia'])
+        if flia_sel: act_c=act_c[act_c['flia']==flia_sel]; ant_c=ant_c[ant_c['flia']==flia_sel]
+        ac2=act_c.groupby('Canal')['Total'].sum().reset_index()
+        bc2=ant_c.groupby('Canal')['Total'].sum().reset_index()
+        mc2=ac2.merge(bc2,on='Canal',suffixes=('_a','_b'))
+        mc2['pct']=mc2['Total_a']/mc2['Total_a'].sum()*100
+        mc2['var']=(mc2['Total_a']-mc2['Total_b'])/mc2['Total_b'].replace(0,np.nan)*100
+        mc2=mc2[mc2['Total_a']>0].sort_values('Total_a',ascending=False)
+        rows=[['Canal','Cajas Actual','Participación %','Variación %']]
+        for _,r in mc2.iterrows():
+            s='+' if pd.notna(r['var']) and r['var']>=0 else ''
+            rows.append([r['Canal'],f"{int(r['Total_a']):,}",
+                         f"{r['pct']:.0f}%",f"{s}{r['var']:.0f}%" if pd.notna(r['var']) else '—'])
+        story.append(_pdf_tbl(rows,[6*cm,4*cm,4*cm,4*cm],
+                              var_cols=(3,),right_cols=(1,2,3)))
+        story.append(Spacer(1,0.3*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error canal: {e}", st['alert']))
+        story.append(Paragraph(f"Error canal: {e}", ds['alert']))
 
-    # ── Alertas ──
-    story.append(Paragraph("ALERTAS AUTOMÁTICAS", st['sec']))
+    # ── Alertas ───────────────────────────────────────────────────────────────
+    story.append(_pdf_section("Alertas Automáticas", ds))
     try:
         flags = generar_red_flags(flia_sel=flia_sel, repre_sel=repre_sel, canal_sel=canal_sel)
-        icon = {'CRITICO': '⚠ ', 'ALERTA': '! ', 'OK': '✓ ', 'INFO': '→ '}
         for nivel, msg in flags:
-            sty = st['alert'] if nivel in ('CRITICO','ALERTA') else (st['ok'] if nivel == 'OK' else st['body'])
-            story.append(Paragraph(f"{icon.get(nivel,'')}{msg}", sty))
+            story.append(_pdf_alert_row(nivel, msg, ds))
+        story.append(Spacer(1,0.2*cm))
     except Exception as e:
-        story.append(Paragraph(f"Error alertas: {e}", st['alert']))
+        story.append(Paragraph(f"Error alertas: {e}", ds['alert']))
 
-    # ── Pendientes ──
+    # ── Pendientes ────────────────────────────────────────────────────────────
     if 'pend' in DFS:
-        story.append(Paragraph("PEDIDOS PENDIENTES (TOP 10)", st['sec']))
+        story.append(_pdf_section("Pedidos Pendientes — Top 10", ds))
         try:
-            df_p = DFS['pend'].copy()
-            df_p.columns = [c.strip() for c in df_p.columns]
-            df_p['Pedidos Pendientes'] = pd.to_numeric(df_p['Pedidos Pendientes'], errors='coerce')
-            df_p = df_p[df_p['Pedidos Pendientes'] > 0]
-            if repre_sel:
-                df_p = df_p[df_p['Vendedor'].str.strip() == repre_sel]
-            agg_p = df_p.groupby('Vendedor')['Pedidos Pendientes'].sum().reset_index()
-            agg_p = agg_p.sort_values('Pedidos Pendientes', ascending=False).head(10)
-            total_p = agg_p['Pedidos Pendientes'].sum()
-            pend_hdr = [['Vendedor', 'Pendientes', '% del Total']]
-            for _, r in agg_p.iterrows():
-                pend_hdr.append([r['Vendedor'][:35],
-                                  f"{int(r['Pedidos Pendientes']):,}",
-                                  f"{r['Pedidos Pendientes']/total_p*100:.0f}%"])
-            story.append(tbl(pend_hdr, [8*cm, 3.5*cm, 3.5*cm]))
+            df_p=DFS['pend'].copy(); df_p.columns=[c.strip() for c in df_p.columns]
+            df_p['Pedidos Pendientes']=pd.to_numeric(df_p['Pedidos Pendientes'],errors='coerce')
+            df_p=df_p[df_p['Pedidos Pendientes']>0]
+            if repre_sel: df_p=df_p[df_p['Vendedor'].str.strip()==repre_sel]
+            agg_p=df_p.groupby('Vendedor')['Pedidos Pendientes'].sum().reset_index()
+            agg_p=agg_p.sort_values('Pedidos Pendientes',ascending=False).head(10)
+            total_p=agg_p['Pedidos Pendientes'].sum()
+            rows=[['Representante','Pendientes','% del Total']]
+            for _,r in agg_p.iterrows():
+                rows.append([r['Vendedor'][:35],f"{int(r['Pedidos Pendientes']):,}",
+                              f"{r['Pedidos Pendientes']/total_p*100:.0f}%"])
+            story.append(_pdf_tbl(rows,[9*cm,4.5*cm,4.5*cm],right_cols=(1,2)))
         except Exception as e:
-            story.append(Paragraph(f"Error pendientes: {e}", st['alert']))
+            story.append(Paragraph(f"Error pendientes: {e}", ds['alert']))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=cb, onLaterPages=cb)
     buf.seek(0)
     return buf.read()
 
 
 def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
-    """PDF de resumen específico por pestaña."""
+    """PDF ejecutivo por pestaña — diseño profesional para directorio."""
     if not PDF_AVAILABLE:
         return None
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=1.8*cm, rightMargin=1.8*cm,
-                            topMargin=1.8*cm, bottomMargin=1.8*cm)
-
-    gold_hex  = '#8B6914'
-    red_hex   = '#C0392B'
-    green_hex = '#1E7A40'
-
-    def _st():
-        s = getSampleStyleSheet()
-        return {
-            'h1':  ParagraphStyle('_h1',  fontSize=18, textColor=rl_colors.HexColor(gold_hex),
-                                  fontName='Helvetica-Bold', spaceAfter=2),
-            'h2':  ParagraphStyle('_h2',  fontSize=10, textColor=rl_colors.HexColor('#555555'),
-                                  fontName='Helvetica', spaceAfter=8),
-            'sec': ParagraphStyle('_sec', fontSize=8,  textColor=rl_colors.HexColor(gold_hex),
-                                  fontName='Helvetica-Bold', textTransform='uppercase',
-                                  spaceBefore=10, spaceAfter=4),
-            'body':ParagraphStyle('_body',fontSize=8,  textColor=rl_colors.HexColor('#1A1A1A'),
-                                  fontName='Helvetica', leading=12, spaceAfter=2),
-            'alrt':ParagraphStyle('_alrt',fontSize=8,  textColor=rl_colors.HexColor(red_hex),
-                                  fontName='Helvetica', spaceAfter=2),
-            'ok':  ParagraphStyle('_ok',  fontSize=8,  textColor=rl_colors.HexColor(green_hex),
-                                  fontName='Helvetica', spaceAfter=2),
-        }
-
-    def _tbl(data, widths):
-        t = Table(data, colWidths=widths, repeatRows=1)
-        t.setStyle(TableStyle([
-            ('BACKGROUND',     (0,0), (-1,0),  rl_colors.HexColor(gold_hex)),
-            ('TEXTCOLOR',      (0,0), (-1,0),  rl_colors.white),
-            ('FONTNAME',       (0,0), (-1,0),  'Helvetica-Bold'),
-            ('FONTSIZE',       (0,0), (-1,-1), 8),
-            ('FONTNAME',       (0,1), (-1,-1), 'Helvetica'),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [rl_colors.white, rl_colors.HexColor('#F5F5F5')]),
-            ('TEXTCOLOR',      (0,1), (-1,-1), rl_colors.HexColor('#1A1A1A')),
-            ('GRID',           (0,0), (-1,-1), 0.4, rl_colors.HexColor('#CCCCCC')),
-            ('PADDING',        (0,0), (-1,-1), 5),
-            ('VALIGN',         (0,0), (-1,-1), 'MIDDLE'),
-        ]))
-        return t
-
-    st   = _st()
+    ds = _pdf_ds()
     filtro_txt = " | ".join(filter(None, [flia_sel, repre_sel, canal_sel])) or "Región completa"
     TAB_LABELS = {
         'region':'Región','repre':'Representantes','clientes':'Clientes',
         'canales':'Canales','analisis':'Análisis','pendientes':'Pendientes',
     }
+    titulo_doc = f"Informe de {TAB_LABELS.get(tab, tab)}"
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=1.5*cm, rightMargin=1.5*cm,
+                            topMargin=2.5*cm, bottomMargin=1.8*cm)
+    cb = _pdf_page_cb(titulo_doc, filtro_txt)
     story = []
-    story.append(Paragraph("CATENA ZAPATA", st['h1']))
-    story.append(Paragraph(f"Resumen — {TAB_LABELS.get(tab, tab)}", st['h2']))
-    story.append(Paragraph(f"Filtro: {filtro_txt}   •   {datetime.now().strftime('%d/%m/%Y %H:%M')}", st['h2']))
-    story.append(HRFlowable(width="100%", thickness=1.5,
-                             color=rl_colors.HexColor(gold_hex), spaceAfter=8))
 
     # ── REGIÓN ────────────────────────────────────────────────────────────────
     if tab == 'region':
         # KPIs
-        story.append(Paragraph("KPIs GENERALES", st['sec']))
         try:
             act = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'])
             ant = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'])
@@ -1696,15 +1785,18 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 act = act[act['flia']==flia_sel]; ant = ant[ant['flia']==flia_sel]
             ta, tb = act['Total'].sum(), ant['Total'].sum()
             vt = (ta-tb)/tb*100 if tb else 0
-            story.append(_tbl([['Cajas Año Actual','Cajas Año Anterior','Variación %'],
-                                [f"{int(ta):,}", f"{int(tb):,}", f"{'+' if vt>=0 else ''}{vt:.0f}%"]],
-                               [5.5*cm, 5.5*cm, 4*cm]))
+            vcol = '#27AE60' if vt >= 0 else '#C0392B'
+            story.append(_pdf_kpi_tiles([
+                ('Cajas Año Actual', f"{int(ta):,}", '#2C3E50'),
+                ('Cajas Año Anterior', f"{int(tb):,}", '#2C3E50'),
+                ('Variación %', f"{'+'if vt>=0 else ''}{vt:.0f}%", vcol),
+            ]))
             story.append(Spacer(1, 0.3*cm))
         except Exception as e:
-            story.append(Paragraph(f"Error KPIs: {e}", st['alrt']))
+            story.append(Paragraph(f"Error KPIs: {e}", ds['alert']))
 
         # Familias
-        story.append(Paragraph("RANKING FAMILIAS", st['sec']))
+        story.append(_pdf_section("RANKING FAMILIAS", ds))
         try:
             act_f = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'])
             ant_f = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'])
@@ -1719,13 +1811,13 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 s = '+' if r['var']>=0 else ''
                 rows.append([r['flia'], f"{int(r['Total_a']):,}", f"{int(r['Total_b']):,}",
                               f"{s}{r['var']:.0f}%", f"{r['part']:.0f}%"])
-            story.append(_tbl(rows, [5*cm, 3*cm, 3*cm, 2.2*cm, 2.3*cm]))
+            story.append(_pdf_tbl(rows, [5*cm, 3*cm, 3*cm, 2.2*cm, 2.3*cm], var_cols=(3,), right_cols=(1,2,3,4)))
             story.append(Spacer(1, 0.3*cm))
         except Exception as e:
-            story.append(Paragraph(f"Error familias: {e}", st['alrt']))
+            story.append(Paragraph(f"Error familias: {e}", ds['alert']))
 
         # Representantes
-        story.append(Paragraph("RANKING REPRESENTANTES", st['sec']))
+        story.append(_pdf_section("RANKING REPRESENTANTES", ds))
         try:
             ar = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
             br = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'])
@@ -1742,15 +1834,13 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 s = '+' if r['var']>=0 else ''
                 rows.append([str(i), r['Vendedor'][:30], f"{int(r['Total_a']):,}",
                               f"{s}{r['var']:.0f}%", f"{r['part']:.0f}%"])
-            story.append(_tbl(rows, [0.8*cm, 6.2*cm, 3*cm, 2.2*cm, 2.3*cm]))
+            story.append(_pdf_tbl(rows, [0.8*cm, 6.2*cm, 3*cm, 2.2*cm, 2.3*cm], var_cols=(3,), right_cols=(2,3,4)))
         except Exception as e:
-            story.append(Paragraph(f"Error representantes: {e}", st['alrt']))
+            story.append(Paragraph(f"Error representantes: {e}", ds['alert']))
 
     # ── REPRESENTANTES ────────────────────────────────────────────────────────
     elif tab == 'repre':
         if repre_sel:
-            # KPIs del rep + ranking
-            story.append(Paragraph("RESUMEN DEL REPRESENTANTE", st['sec']))
             try:
                 df_r = DFS['x repre'][DFS['x repre']['Vendedor']==repre_sel]
                 act = get_ind(df_r, 'Año Actual Cajas', ['Vendedor','flia'])
@@ -1760,17 +1850,19 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 all_act = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
                 rk = all_act.groupby('Vendedor')['Total'].sum().rank(ascending=False, method='min')
                 rank = int(rk.get(repre_sel, 0))
-                s = '+' if vt>=0 else ''
-                story.append(_tbl(
-                    [['Cajas Año Actual','Cajas Año Anterior','Variación %','Ranking Nacional'],
-                     [f"{int(ta):,}", f"{int(tb):,}", f"{s}{vt:.0f}%", f"#{rank} de {len(REPRESENTANTES)}"]],
-                    [4*cm, 4*cm, 3.5*cm, 4*cm]))
+                vcol = '#27AE60' if vt >= 0 else '#C0392B'
+                story.append(_pdf_kpi_tiles([
+                    ('Cajas Año Actual', f"{int(ta):,}", '#2C3E50'),
+                    ('Cajas Año Anterior', f"{int(tb):,}", '#2C3E50'),
+                    ('Variación %', f"{'+'if vt>=0 else ''}{vt:.0f}%", vcol),
+                    ('Ranking Nacional', f"#{rank} de {len(REPRESENTANTES)}", '#2C3E50'),
+                ]))
                 story.append(Spacer(1, 0.3*cm))
             except Exception as e:
-                story.append(Paragraph(f"Error KPIs: {e}", st['alrt']))
+                story.append(Paragraph(f"Error KPIs: {e}", ds['alert']))
 
             # Evolución mensual
-            story.append(Paragraph("EVOLUCIÓN MENSUAL (cajas año actual)", st['sec']))
+            story.append(_pdf_section("EVOLUCIÓN MENSUAL (cajas año actual)", ds))
             try:
                 df_r2 = DFS['x repre'][DFS['x repre']['Vendedor']==repre_sel]
                 act2  = get_ind(df_r2, 'Año Actual Cajas', ['Vendedor','flia'])
@@ -1783,13 +1875,13 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                         vp = (va-vb)/vb*100 if vb else 0
                         s2 = '+' if vp>=0 else ''
                         mes_rows.append([m, f"{int(va):,}", f"{int(vb):,}", f"{s2}{vp:.0f}%"])
-                story.append(_tbl(mes_rows, [2.5*cm, 4*cm, 4*cm, 3*cm]))
+                story.append(_pdf_tbl(mes_rows, [2.5*cm, 4*cm, 4*cm, 3*cm], var_cols=(3,), right_cols=(1,2,3)))
                 story.append(Spacer(1, 0.3*cm))
             except Exception as e:
-                story.append(Paragraph(f"Error evolución: {e}", st['alrt']))
+                story.append(Paragraph(f"Error evolución: {e}", ds['alert']))
 
             # Mix por canal
-            story.append(Paragraph("MIX POR CANAL", st['sec']))
+            story.append(_pdf_section("MIX POR CANAL", ds))
             try:
                 df_c = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor']==repre_sel]
                 act_c = get_ind(df_c, 'Año Actual Cajas', ['Canal','flia'])
@@ -1805,28 +1897,29 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                     s = '+' if r['var']>=0 else ''
                     rows.append([r['Canal'], f"{int(r['Total_a']):,}",
                                   f"{r['pct']:.0f}%", f"{s}{r['var']:.0f}%"])
-                story.append(_tbl(rows, [5*cm, 3.5*cm, 3*cm, 3*cm]))
+                story.append(_pdf_tbl(rows, [5*cm, 3.5*cm, 3*cm, 3*cm], var_cols=(3,), right_cols=(1,2,3)))
                 story.append(Spacer(1, 0.3*cm))
             except Exception as e:
-                story.append(Paragraph(f"Error canales: {e}", st['alrt']))
+                story.append(Paragraph(f"Error canales: {e}", ds['alert']))
 
-            # Alertas por familia
-            story.append(Paragraph("VARIACIÓN POR FAMILIA", st['sec']))
+            # Variación por familia
+            story.append(_pdf_section("VARIACIÓN POR FAMILIA", ds))
             try:
                 rv = get_ind(DFS['x repre'], 'Var %', ['Vendedor','flia'])
                 rv_r = rv[rv['Vendedor']==repre_sel].copy()
                 rv_r['pct'] = rv_r['Total']*100
                 rv_r = rv_r.dropna(subset=['pct']).sort_values('pct')
+                fam_rows = [['Familia', 'Var %']]
                 for _, row in rv_r.iterrows():
                     s2 = '+' if row['pct']>=0 else ''
-                    sty = st['ok'] if row['pct']>=0 else st['alrt']
-                    story.append(Paragraph(f"• {row['flia']}: {s2}{row['pct']:.0f}%", sty))
+                    fam_rows.append([row['flia'], f"{s2}{row['pct']:.0f}%"])
+                story.append(_pdf_tbl(fam_rows, [12*cm, 4*cm], var_cols=(1,), right_cols=(1,)))
                 story.append(Spacer(1, 0.3*cm))
             except Exception as e:
-                story.append(Paragraph(f"Error familias: {e}", st['alrt']))
+                story.append(Paragraph(f"Error familias: {e}", ds['alert']))
 
             # Top clientes
-            story.append(Paragraph("TOP CLIENTES — VARIACIÓN", st['sec']))
+            story.append(_pdf_section("TOP CLIENTES — VARIACIÓN", ds))
             try:
                 if 'x cliente' in DFS:
                     cli = DFS['x cliente'][DFS['x cliente']['Vendedor']==repre_sel]
@@ -1841,21 +1934,21 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                         s2 = '+' if r['vp']>=0 else ''
                         rows.append([str(r['Cliente'])[:28], str(r['flia'])[:14],
                                       f"{int(r['Total_a']):,}", f"{s2}{r['vp']:.0f}%"])
-                    story.append(Paragraph("Mayor crecimiento:", st['body']))
-                    story.append(_tbl(rows, [7*cm, 3.5*cm, 2.5*cm, 2.5*cm]))
+                    story.append(_pdf_section("Mayor crecimiento", ds))
+                    story.append(_pdf_tbl(rows, [7*cm, 3.5*cm, 2.5*cm, 2.5*cm], var_cols=(3,)))
                     story.append(Spacer(1, 0.2*cm))
                     rows2 = [['Cliente','Familia','Cajas Act','Var %']]
                     for _, r in mc3.nsmallest(8,'dif').iterrows():
                         s2 = '+' if r['vp']>=0 else ''
                         rows2.append([str(r['Cliente'])[:28], str(r['flia'])[:14],
                                        f"{int(r['Total_a']):,}", f"{s2}{r['vp']:.0f}%"])
-                    story.append(Paragraph("Mayor caída:", st['body']))
-                    story.append(_tbl(rows2, [7*cm, 3.5*cm, 2.5*cm, 2.5*cm]))
+                    story.append(_pdf_section("Mayor caída", ds))
+                    story.append(_pdf_tbl(rows2, [7*cm, 3.5*cm, 2.5*cm, 2.5*cm], var_cols=(3,)))
             except Exception as e:
-                story.append(Paragraph(f"Error clientes: {e}", st['alrt']))
+                story.append(Paragraph(f"Error clientes: {e}", ds['alert']))
         else:
             # Sin rep seleccionado: ranking general
-            story.append(Paragraph("RANKING GENERAL DE REPRESENTANTES", st['sec']))
+            story.append(_pdf_section("RANKING GENERAL DE REPRESENTANTES", ds))
             try:
                 ar = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
                 br = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'])
@@ -1872,9 +1965,9 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                     s = '+' if r['var']>=0 else ''
                     rows.append([str(i), r['Vendedor'][:30], f"{int(r['Total_a']):,}",
                                   f"{s}{r['var']:.0f}%", f"{r['part']:.0f}%"])
-                story.append(_tbl(rows, [0.8*cm, 6.2*cm, 3*cm, 2.2*cm, 2.3*cm]))
+                story.append(_pdf_tbl(rows, [0.8*cm, 6.2*cm, 3*cm, 2.2*cm, 2.3*cm], var_cols=(3,), right_cols=(2,3,4)))
             except Exception as e:
-                story.append(Paragraph(f"Error ranking: {e}", st['alrt']))
+                story.append(Paragraph(f"Error ranking: {e}", ds['alert']))
 
     # ── CLIENTES ──────────────────────────────────────────────────────────────
     elif tab == 'clientes':
@@ -1883,59 +1976,60 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
             n, p, a = len(datos['nuevos']), len(datos['perdidos']), len(datos['activos'])
             total_crec  = int(datos['nuevos']['dif'].sum())
             total_caida = int(datos['perdidos']['dif'].abs().sum())
-            story.append(Paragraph("RESUMEN DE CLIENTES", st['sec']))
-            story.append(_tbl(
-                [['Activos ambos años','Con Crecimiento','Con Caídas',
-                  'Cajas ganadas','Cajas perdidas'],
-                 [str(a), str(n), str(p), f"{total_crec:,}", f"{total_caida:,}"]],
-                [3.5*cm, 3*cm, 3*cm, 3.5*cm, 3.5*cm]))
+            story.append(_pdf_kpi_tiles([
+                ('Activos ambos años', str(a), '#2C3E50'),
+                ('Con Crecimiento', str(n), '#217A45'),
+                ('Con Caídas', str(p), '#8B2222'),
+                ('Cajas ganadas', f"+{total_crec:,}", '#217A45'),
+                ('Cajas perdidas', f"-{total_caida:,}", '#8B2222'),
+            ]))
             story.append(Spacer(1, 0.3*cm))
 
             # Top crecimiento
-            story.append(Paragraph("TOP 10 — MAYOR CRECIMIENTO (cajas)", st['sec']))
+            story.append(_pdf_section("TOP 10 — MAYOR CRECIMIENTO (cajas)", ds))
             rows = [['Cliente','Representante','Cajas Act','Δ Cajas','Var %']]
             for _, r in datos['top_sube'].head(10).iterrows():
                 s = '+' if r['dif'] >= 0 else ''
                 vstr = f"{r['var']:+.0f}%" if pd.notna(r['var']) else '—'
                 rows.append([str(r['Cliente'])[:26], str(r['Vendedor'])[:20],
                               f"{int(r['act']):,}", f"{s}{int(r['dif']):,}", vstr])
-            story.append(_tbl(rows, [5*cm, 4*cm, 2.5*cm, 2.5*cm, 2.5*cm]))
+            story.append(_pdf_tbl(rows, [5*cm, 4*cm, 2.5*cm, 2.5*cm, 2.5*cm], var_cols=(4,), right_cols=(2,3,4)))
             story.append(Spacer(1, 0.3*cm))
 
             # Top caída
-            story.append(Paragraph("TOP 10 — MAYOR CAÍDA (cajas)", st['sec']))
+            story.append(_pdf_section("TOP 10 — MAYOR CAÍDA (cajas)", ds))
             rows2 = [['Cliente','Representante','Cajas Act','Δ Cajas','Var %']]
             for _, r in datos['top_baja'].head(10).iterrows():
                 vstr = f"{r['var']:+.0f}%" if pd.notna(r['var']) else '—'
                 rows2.append([str(r['Cliente'])[:26], str(r['Vendedor'])[:20],
                                f"{int(r['act']):,}", f"{int(r['dif']):,}", vstr])
-            story.append(_tbl(rows2, [5*cm, 4*cm, 2.5*cm, 2.5*cm, 2.5*cm]))
+            story.append(_pdf_tbl(rows2, [5*cm, 4*cm, 2.5*cm, 2.5*cm, 2.5*cm], var_cols=(4,), right_cols=(2,3,4)))
             story.append(Spacer(1, 0.3*cm))
 
             # Con crecimiento / con caídas
             if not datos['nuevos'].empty:
-                story.append(Paragraph(f"CON CRECIMIENTO — TOP 10 (de {n} total)", st['sec']))
+                story.append(_pdf_section(f"CON CRECIMIENTO — TOP 10 (de {n} total)", ds))
                 rowsN = [['Cliente','Representante','Cajas Act','Δ Cajas']]
                 for _, r in datos['nuevos'].nlargest(10,'dif').iterrows():
                     rowsN.append([str(r['Cliente'])[:30], str(r['Vendedor'])[:22],
                                   f"{int(r['act']):,}", f"+{int(r['dif']):,}"])
-                story.append(_tbl(rowsN, [6*cm, 4.5*cm, 2.5*cm, 2.5*cm]))
+                story.append(_pdf_tbl(rowsN, [6*cm, 4.5*cm, 2.5*cm, 2.5*cm]))
                 story.append(Spacer(1, 0.3*cm))
 
             if not datos['perdidos'].empty:
-                story.append(Paragraph(f"CON CAÍDAS — TOP 10 (de {p} total)", st['sec']))
+                story.append(_pdf_section(f"CON CAÍDAS — TOP 10 (de {p} total)", ds))
                 rowsP = [['Cliente','Representante','Cajas Act','Δ Cajas']]
                 for _, r in datos['perdidos'].nsmallest(10,'dif').iterrows():
                     rowsP.append([str(r['Cliente'])[:30], str(r['Vendedor'])[:22],
                                   f"{int(r['act']):,}", f"{int(r['dif']):,}"])
-                story.append(_tbl(rowsP, [6*cm, 4.5*cm, 2.5*cm, 2.5*cm]))
+                story.append(_pdf_tbl(rowsP, [6*cm, 4.5*cm, 2.5*cm, 2.5*cm]))
 
         except Exception as e:
-            story.append(Paragraph(f"Error clientes: {e}", st['alrt']))
+            story.append(Paragraph(f"Error clientes: {e}", ds['alert']))
 
     # ── CANALES ───────────────────────────────────────────────────────────────
     elif tab == 'canales':
-        story.append(Paragraph("MIX POR CANAL", st['sec']))
+        story.append(_pdf_section("MIX POR CANAL", ds))
         try:
             if repre_sel:
                 df_c = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor']==repre_sel]
@@ -1957,21 +2051,19 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 s = '+' if r['var']>=0 else ''
                 rows.append([r['Canal'], f"{int(r['Total_a']):,}", f"{int(r['Total_b']):,}",
                               f"{r['pct']:.0f}%", f"{s}{r['var']:.0f}%"])
-            story.append(_tbl(rows, [4.5*cm, 3.5*cm, 3.5*cm, 3*cm, 2.5*cm]))
+            story.append(_pdf_tbl(rows, [4.5*cm, 3.5*cm, 3.5*cm, 3*cm, 2.5*cm], var_cols=(4,), right_cols=(1,2,3,4)))
         except Exception as e:
-            story.append(Paragraph(f"Error canales: {e}", st['alrt']))
+            story.append(Paragraph(f"Error canales: {e}", ds['alert']))
 
     # ── ANÁLISIS ──────────────────────────────────────────────────────────────
     elif tab == 'analisis':
-        story.append(Paragraph("RED FLAGS — ALERTAS AUTOMÁTICAS", st['sec']))
+        story.append(_pdf_section("RED FLAGS — ALERTAS AUTOMÁTICAS", ds))
         try:
             flags = generar_red_flags(flia_sel=flia_sel, repre_sel=repre_sel, canal_sel=canal_sel)
-            icon  = {'CRITICO':'⚠ ','ALERTA':'! ','OK':'✓ ','INFO':'→ '}
             for nivel, msg in flags:
-                sty = st['alrt'] if nivel in ('CRITICO','ALERTA') else (st['ok'] if nivel=='OK' else st['body'])
-                story.append(Paragraph(f"{icon.get(nivel,'')}{msg}", sty))
+                story.append(_pdf_alert_row(nivel, msg, ds))
         except Exception as e:
-            story.append(Paragraph(f"Error red flags: {e}", st['alrt']))
+            story.append(Paragraph(f"Error red flags: {e}", ds['alert']))
 
         # Análisis quirúrgico para PDF
         try:
@@ -2002,7 +2094,7 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
 
         # Tabla familias
         story.append(Spacer(1, 0.3*cm))
-        story.append(Paragraph("FAMILIAS — VARIACIÓN YTD", st['sec']))
+        story.append(_pdf_section("FAMILIAS — VARIACIÓN YTD", ds))
         df_fq = aq_pdf.get('familias', pd.DataFrame())
         if not df_fq.empty:
             hdr_row = [Paragraph(x, hdr_st) for x in ['Familia','Actual','Anterior','Dif','Var%']]
@@ -2033,7 +2125,7 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
 
         # Tabla canales
         story.append(Spacer(1, 0.3*cm))
-        story.append(Paragraph("CANALES — VARIACIÓN YTD", st['sec']))
+        story.append(_pdf_section("CANALES — VARIACIÓN YTD", ds))
         df_cq = aq_pdf.get('canales', pd.DataFrame())
         if not df_cq.empty:
             hdr_row2 = [Paragraph(x, hdr_st) for x in ['Canal','Actual','Anterior','Dif','Var%']]
@@ -2064,7 +2156,7 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
 
         # Matriz Representante × Familia
         story.append(Spacer(1, 0.3*cm))
-        story.append(Paragraph("MAPA DE TENDENCIAS — REPRESENTANTE × FAMILIA", st['sec']))
+        story.append(_pdf_section("MAPA DE TENDENCIAS — REPRESENTANTE × FAMILIA", ds))
         df_mx = aq_pdf.get('matriz', pd.DataFrame())
         if not df_mx.empty:
             flias_mx = list(df_mx.columns)
@@ -2095,7 +2187,7 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
 
     # ── PENDIENTES ────────────────────────────────────────────────────────────
     elif tab == 'pendientes':
-        story.append(Paragraph("PEDIDOS PENDIENTES POR VENDEDOR", st['sec']))
+        story.append(_pdf_section("PEDIDOS PENDIENTES POR VENDEDOR", ds))
         try:
             if 'pend' in DFS:
                 df_p = DFS['pend'].copy()
@@ -2112,22 +2204,22 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                     rows.append([r['Vendedor'][:35], f"{int(r['Pedidos Pendientes']):,}",
                                   f"{r['Pedidos Pendientes']/total_p*100:.0f}%"])
                 rows.append(['TOTAL', f"{int(total_p):,}", '100%'])
-                story.append(_tbl(rows, [8*cm, 4*cm, 3.5*cm]))
+                story.append(_pdf_tbl(rows, [8*cm, 4*cm, 3.5*cm]))
                 story.append(Spacer(1, 0.4*cm))
 
                 # Detalle por familia
-                story.append(Paragraph("DETALLE POR FAMILIA", st['sec']))
+                story.append(_pdf_section("DETALLE POR FAMILIA", ds))
                 df_det = df_p.sort_values('Pedidos Pendientes', ascending=False)
                 rows2 = [['Familia Producto','Vendedor','Pendientes']]
                 for _, r in df_det.iterrows():
                     rows2.append([str(r.get('Familia Producto',''))[:30],
                                    str(r.get('Vendedor',''))[:25],
                                    f"{int(r.get('Pedidos Pendientes',0)):,}"])
-                story.append(_tbl(rows2, [7*cm, 5*cm, 3.5*cm]))
+                story.append(_pdf_tbl(rows2, [7*cm, 5*cm, 3.5*cm]))
         except Exception as e:
-            story.append(Paragraph(f"Error pendientes: {e}", st['alrt']))
+            story.append(Paragraph(f"Error pendientes: {e}", ds['alert']))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=cb, onLaterPages=cb)
     buf.seek(0)
     return buf.read()
 
