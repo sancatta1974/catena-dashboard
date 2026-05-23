@@ -1037,11 +1037,26 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     cv   = C['green'] if var_t >= 0 else C['red']
     sign = '+' if var_t >= 0 else ''
 
-    # Número de representantes activos según filtros
-    n_repre = 1 if repre_sel else (
-        DFS['x repre x canal'][DFS['x repre x canal']['Canal']==canal_sel]['Vendedor'].nunique()
-        if canal_sel else DFS['x repre']['Vendedor'].nunique()
-    )
+    # Número de representantes activos según filtros (incluyendo flia)
+    try:
+        if repre_sel:
+            n_repre = 1
+        elif flia_sel and canal_sel:
+            n_repre = DFS['x repre x canal'][
+                (DFS['x repre x canal']['Canal'] == canal_sel) &
+                (DFS['x repre x canal']['flia'] == flia_sel)
+            ]['Vendedor'].nunique()
+        elif flia_sel:
+            n_repre = DFS['x repre'][DFS['x repre']['flia'] == flia_sel]['Vendedor'].nunique()
+        elif canal_sel:
+            n_repre = DFS['x repre x canal'][DFS['x repre x canal']['Canal'] == canal_sel]['Vendedor'].nunique()
+        else:
+            n_repre = DFS['x repre']['Vendedor'].nunique()
+    except:
+        n_repre = '—'
+
+    # Número de familias según filtros
+    n_flia = 1 if flia_sel else len(FAMILIAS)
 
     filtro_label = " | ".join(filter(None, [
         flia_sel, repre_sel, canal_sel
@@ -1052,7 +1067,7 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
         ('CAJAS AÑO ANTERIOR', f"{int(tot_b):,}",     C['muted']),
         ('VARIACION TOTAL',    f"{sign}{var_t:.0f}%",  cv),
         ('REPRESENTANTES',     str(n_repre),            C['gold']),
-        ('FAMILIAS',           str(len(FAMILIAS)),      C['gold']),
+        ('FAMILIAS',           str(n_flia),             C['gold']),
         ('PENDIENTES',         f"{int(pend):,}",        C['red'] if pend > 0 else C['muted']),
     ]
     return html.Div([
