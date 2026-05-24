@@ -651,12 +651,11 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
                    '#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC']
         colors = [palette[i % len(palette)] for i in range(len(m))]
 
-        total_ant   = m['Total_b'].sum()
+        total_ant    = m['Total_b'].sum()
         m['pct_ant'] = (m['Total_b'] / total_ant * 100).fillna(0) if total_ant > 0 else 0
         m['delta_pp'] = m['pct'] - m['pct_ant']
 
-        max_pct_all = max(m['pct'].max(), m['pct_ant'].max())
-        x_rmax = max_pct_all + 17  # espacio para etiquetas "ant XX%"
+        x_rmax = m['pct'].max() + 16
 
         fig = go.Figure()
 
@@ -673,30 +672,28 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
                           '<br>Ant: %{customdata[2]:.0f}%  ·  Var vol: %{customdata[1]:+.0f}%<extra></extra>',
         ))
 
-        # Tick vertical: posición año anterior (estilo bullet chart)
-        fig.add_trace(go.Scatter(
-            y=m['Canal'], x=m['pct_ant'],
-            mode='markers',
-            marker=dict(symbol='line-ns', size=26, line=dict(width=2.5, color='rgba(255,255,255,0.55)')),
-            hoverinfo='skip',
-            showlegend=False,
-        ))
-
-        # Etiquetas "ant XX%" alineadas a la derecha, con delta pp
-        def _ant_label(p_ant, delta):
-            arrow = '▲' if delta > 0.4 else ('▼' if delta < -0.4 else '–')
-            return f"{arrow} ant {p_ant:.0f}%"
-
-        fig.add_trace(go.Scatter(
-            y=m['Canal'],
-            x=[max_pct_all + 2] * len(m),
-            mode='text',
-            text=[_ant_label(p, d) for p, d in zip(m['pct_ant'], m['delta_pp'])],
-            textposition='middle right',
-            textfont=dict(size=9, color=C['muted']),
-            hoverinfo='skip',
-            showlegend=False,
-        ))
+        # Delta pp: tres trazas con color según signo
+        _BLUE = '#4E79A7'
+        _delta_cfg = [
+            (m['delta_pp'] >  0.4, C['green'], '▲'),
+            (m['delta_pp'] < -0.4, C['red'],   '▼'),
+            (m['delta_pp'].abs() <= 0.4, _BLUE, '='),
+        ]
+        x_delta = m['pct'].max() + 2
+        for mask, color, sym in _delta_cfg:
+            sub = m[mask]
+            if sub.empty:
+                continue
+            fig.add_trace(go.Scatter(
+                y=sub['Canal'],
+                x=[x_delta] * len(sub),
+                mode='text',
+                text=[f"{sym} {d:+.0f}pp" for d in sub['delta_pp']],
+                textposition='middle right',
+                textfont=dict(size=13, color=color, family='Helvetica'),
+                hoverinfo='skip',
+                showlegend=False,
+            ))
 
         subtitulo = repre_sel or 'Región'
         pl_m = {k: v for k, v in PL.items() if k not in ('xaxis','yaxis','margin')}
