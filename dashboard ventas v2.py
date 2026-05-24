@@ -651,7 +651,16 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
                    '#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC']
         colors = [palette[i % len(palette)] for i in range(len(m))]
 
+        total_ant   = m['Total_b'].sum()
+        m['pct_ant'] = (m['Total_b'] / total_ant * 100).fillna(0) if total_ant > 0 else 0
+        m['delta_pp'] = m['pct'] - m['pct_ant']
+
+        max_pct_all = max(m['pct'].max(), m['pct_ant'].max())
+        x_rmax = max_pct_all + 17  # espacio para etiquetas "ant XX%"
+
         fig = go.Figure()
+
+        # Barras año actual
         fig.add_trace(go.Bar(
             y=m['Canal'], x=m['pct'], orientation='h',
             marker_color=colors,
@@ -659,21 +668,46 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
             text=[f"  {p:.0f}%  ({int(v):,} caj)" for p, v in zip(m['pct'], m['Total_a'])],
             textposition='inside', insidetextanchor='start',
             textfont=dict(size=11, color='#FFFFFF', family='Helvetica'),
-            customdata=list(zip(m['Total_a'], m['var'].fillna(float('nan')))),
-            hovertemplate='<b>%{y}</b><br>%{x:.0f}%  ·  %{customdata[0]:,.0f} caj'
-                          '<br>Var vs año ant: %{customdata[1]:+.0f}%<extra></extra>',
+            customdata=list(zip(m['Total_a'], m['var'].fillna(float('nan')), m['pct_ant'])),
+            hovertemplate='<b>%{y}</b><br>Act: %{x:.0f}%  ·  %{customdata[0]:,.0f} caj'
+                          '<br>Ant: %{customdata[2]:.0f}%  ·  Var vol: %{customdata[1]:+.0f}%<extra></extra>',
+        ))
+
+        # Tick vertical: posición año anterior (estilo bullet chart)
+        fig.add_trace(go.Scatter(
+            y=m['Canal'], x=m['pct_ant'],
+            mode='markers',
+            marker=dict(symbol='line-ns', size=26, line=dict(width=2.5, color='rgba(255,255,255,0.55)')),
+            hoverinfo='skip',
+            showlegend=False,
+        ))
+
+        # Etiquetas "ant XX%" alineadas a la derecha, con delta pp
+        def _ant_label(p_ant, delta):
+            arrow = '▲' if delta > 0.4 else ('▼' if delta < -0.4 else '–')
+            return f"{arrow} ant {p_ant:.0f}%"
+
+        fig.add_trace(go.Scatter(
+            y=m['Canal'],
+            x=[max_pct_all + 2] * len(m),
+            mode='text',
+            text=[_ant_label(p, d) for p, d in zip(m['pct_ant'], m['delta_pp'])],
+            textposition='middle right',
+            textfont=dict(size=9, color=C['muted']),
+            hoverinfo='skip',
+            showlegend=False,
         ))
 
         subtitulo = repre_sel or 'Región'
         pl_m = {k: v for k, v in PL.items() if k not in ('xaxis','yaxis','margin')}
-        altura = max(200, len(m) * 32 + 60)
+        altura = max(200, len(m) * 36 + 60)
         fig.update_layout(
             **pl_m,
             title=f'Participación por Canal — {subtitulo}',
             height=altura,
-            margin=dict(l=10, r=30, t=40, b=20),
+            margin=dict(l=10, r=10, t=40, b=20),
             showlegend=False,
-            xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+            xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, range=[0, x_rmax]),
             yaxis=dict(tickfont=dict(size=11, color=C['text']), showgrid=False),
         )
         return fig
