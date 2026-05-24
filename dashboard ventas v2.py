@@ -660,7 +660,7 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
             textposition='inside', insidetextanchor='start',
             textfont=dict(size=11, color='#FFFFFF', family='Helvetica'),
             customdata=list(zip(m['Total_a'], m['var'].fillna(float('nan')))),
-            hovertemplate='<b>%{y}</b><br>%{x:.1f}%  ·  %{customdata[0]:,.0f} caj'
+            hovertemplate='<b>%{y}</b><br>%{x:.0f}%  ·  %{customdata[0]:,.0f} caj'
                           '<br>Var vs año ant: %{customdata[1]:+.0f}%<extra></extra>',
         ))
 
@@ -1478,7 +1478,7 @@ def generar_pdf_repre(repre_sel):
         story.append(_pdf_kpi_tiles([
             ('Cajas Año Actual',   f"{int(tot_a):,}",           '#111111'),
             ('Cajas Año Anterior', f"{int(tot_b):,}",           '#555555'),
-            ('Variación %',        f"{sign}{var_t:.1f}%",       var_col),
+            ('Variación %',        f"{sign}{var_t:.0f}%",       var_col),
             ('Ranking Nacional',   f"#{rank} / {len(REPRESENTANTES)}", '#B8972A'),
         ]))
         story.append(Spacer(1, 0.4*cm))
@@ -1636,7 +1636,7 @@ def generar_pdf_resumen(flia_sel=None, repre_sel=None, canal_sel=None):
         story.append(_pdf_kpi_tiles([
             ('Cajas Año Actual',   f"{int(tot_a):,}",     '#111111'),
             ('Cajas Año Anterior', f"{int(tot_b):,}",     '#555555'),
-            ('Variación %',        f"{sign}{var_t:.1f}%", var_col),
+            ('Variación %',        f"{sign}{var_t:.0f}%", var_col),
             ('Pendientes',         f"{pend_tot:,}",       '#B03020' if pend_tot > 0 else '#555555'),
         ]))
         story.append(Spacer(1, 0.4*cm))
