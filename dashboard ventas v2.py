@@ -174,7 +174,7 @@ except Exception as _e:
 MC  = month_cols(DFS.get('x flia', pd.DataFrame()))
 FAMILIAS       = sorted(DFS['x flia']['flia'].unique().tolist()) if DATA_OK else []
 REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist()) if DATA_OK else []
-CANALES        = sorted(DFS['x flia x canal']['Canal'].unique().tolist()) if DATA_OK else []
+CANALES        = sorted([str(x) for x in DFS['x flia x canal']['Canal'].dropna().unique().tolist()]) if DATA_OK else []
 
 # ── Credenciales ───────────────────────────────────────────────────────────────
 
@@ -2584,7 +2584,7 @@ def cb_auto_sync(n, last_modified, version):
         MC = month_cols(DFS['x flia'])
         FAMILIAS = sorted(DFS['x flia']['flia'].unique().tolist())
         REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist())
-        CANALES = sorted(DFS['x flia x canal']['Canal'].unique().tolist())
+        CANALES = sorted([str(x) for x in DFS['x flia x canal']['Canal'].dropna().unique().tolist()])
         return (version or 0) + 1, current_modified, f"Actualizado automáticamente: {now}"
     return no_update, last_modified or '', f"Verificado: {now}"
 
@@ -3181,7 +3181,7 @@ def cb_refresh_data(n, version):
     MC = month_cols(DFS['x flia'])
     FAMILIAS = sorted(DFS['x flia']['flia'].unique().tolist())
     REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist())
-    CANALES = sorted(DFS['x flia x canal']['Canal'].unique().tolist())
+    CANALES = sorted([str(x) for x in DFS['x flia x canal']['Canal'].dropna().unique().tolist()])
     ts = f"Recargado desde Drive: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     return (version or 0) + 1, ts
 
