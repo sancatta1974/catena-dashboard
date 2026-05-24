@@ -669,7 +669,7 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
             textfont=dict(size=11, color='#FFFFFF', family='Helvetica'),
             customdata=list(zip(m['Total_a'], m['var'].fillna(float('nan')), m['pct_ant'])),
             hovertemplate='<b>%{y}</b><br>Act: %{x:.0f}%  ·  %{customdata[0]:,.0f} caj'
-                          '<br>Ant: %{customdata[2]:.0f}%  ·  Var vol: %{customdata[1]:+.0f}%<extra></extra>',
+                          '<br>Ant: %{customdata[2]:.0f}%<extra></extra>',
         ))
 
         # Delta pp: tres trazas con color según signo
