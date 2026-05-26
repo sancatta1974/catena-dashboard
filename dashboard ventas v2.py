@@ -2114,7 +2114,9 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
             if pd.isna(v): return '—'
             return f"{'+'if v>=0 else ''}{v:.0f}%"
 
-        cell_st = ParagraphStyle('_cs', fontSize=7, fontName='Helvetica', leading=9)
+        cell_st    = ParagraphStyle('_cs',  fontSize=7, fontName='Helvetica', leading=9)
+        cell_wh_st = ParagraphStyle('_csw', fontSize=7, fontName='Helvetica-Bold', leading=9,
+                                    textColor=rl_colors.white)
         hdr_st  = ParagraphStyle('_hs', fontSize=7, fontName='Helvetica-Bold', leading=9,
                                  textColor=rl_colors.white)
 
@@ -2138,27 +2140,25 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
         if not df_fq.empty:
             hdr_row = [Paragraph(x, hdr_st) for x in ['Familia','Actual','Anterior','Dif','Var%']]
             rows_fq = [hdr_row]
-            for _, r in df_fq.iterrows():
-                v = r.get('Var%', np.nan)
-                dif = r.get('Dif', r['Actual'] - r['Anterior'])
-                rows_fq.append([
-                    Paragraph(str(r['Familia'])[:30], cell_st),
-                    Paragraph(f"{int(r['Actual']):,}", cell_st),
-                    Paragraph(f"{int(r['Anterior']):,}", cell_st),
-                    Paragraph(f"{int(dif):+,}", cell_st),
-                    Paragraph(_vt_pdf(v), cell_st),
-                ])
-            tf_fq = Table(rows_fq, colWidths=[6*cm,3*cm,3*cm,2.5*cm,2.5*cm])
             ts_fq = [('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1A1A1A')),
                      ('GRID',(0,0),(-1,-1),0.3,rl_colors.HexColor('#CCCCCC')),
                      ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
                      ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
                      ('ALIGN',(1,0),(-1,-1),'RIGHT')]
             for i, (_, r) in enumerate(df_fq.iterrows(), 1):
-                bg = _pdf_var_color(r.get('Var%', np.nan))
+                v = r.get('Var%', np.nan)
+                dif = r.get('Dif', r['Actual'] - r['Anterior'])
+                bg = _pdf_var_color(v)
+                rows_fq.append([
+                    Paragraph(str(r['Familia'])[:30], cell_st),
+                    Paragraph(f"{int(r['Actual']):,}", cell_st),
+                    Paragraph(f"{int(r['Anterior']):,}", cell_st),
+                    Paragraph(f"{int(dif):+,}", cell_st),
+                    Paragraph(_vt_pdf(v), cell_wh_st if bg else cell_st),
+                ])
                 if bg:
                     ts_fq.append(('BACKGROUND',(4,i),(4,i),bg))
-                    ts_fq.append(('TEXTCOLOR',(4,i),(4,i),rl_colors.white))
+            tf_fq = Table(rows_fq, colWidths=[6*cm,3*cm,3*cm,2.5*cm,2.5*cm])
             tf_fq.setStyle(TableStyle(ts_fq))
             story.append(tf_fq)
 
@@ -2169,27 +2169,25 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
         if not df_cq.empty:
             hdr_row2 = [Paragraph(x, hdr_st) for x in ['Canal','Actual','Anterior','Dif','Var%']]
             rows_cq = [hdr_row2]
-            for _, r in df_cq.iterrows():
-                v = r.get('Var%', np.nan)
-                dif = r.get('Dif', r['Actual'] - r['Anterior'])
-                rows_cq.append([
-                    Paragraph(str(r['Canal'])[:30], cell_st),
-                    Paragraph(f"{int(r['Actual']):,}", cell_st),
-                    Paragraph(f"{int(r['Anterior']):,}", cell_st),
-                    Paragraph(f"{int(dif):+,}", cell_st),
-                    Paragraph(_vt_pdf(v), cell_st),
-                ])
-            tf_cq = Table(rows_cq, colWidths=[6*cm,3*cm,3*cm,2.5*cm,2.5*cm])
             ts_cq = [('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1A1A1A')),
                      ('GRID',(0,0),(-1,-1),0.3,rl_colors.HexColor('#CCCCCC')),
                      ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
                      ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
                      ('ALIGN',(1,0),(-1,-1),'RIGHT')]
             for i, (_, r) in enumerate(df_cq.iterrows(), 1):
-                bg = _pdf_var_color(r.get('Var%', np.nan))
+                v = r.get('Var%', np.nan)
+                dif = r.get('Dif', r['Actual'] - r['Anterior'])
+                bg = _pdf_var_color(v)
+                rows_cq.append([
+                    Paragraph(str(r['Canal'])[:30], cell_st),
+                    Paragraph(f"{int(r['Actual']):,}", cell_st),
+                    Paragraph(f"{int(r['Anterior']):,}", cell_st),
+                    Paragraph(f"{int(dif):+,}", cell_st),
+                    Paragraph(_vt_pdf(v), cell_wh_st if bg else cell_st),
+                ])
                 if bg:
                     ts_cq.append(('BACKGROUND',(4,i),(4,i),bg))
-                    ts_cq.append(('TEXTCOLOR',(4,i),(4,i),rl_colors.white))
+            tf_cq = Table(rows_cq, colWidths=[6*cm,3*cm,3*cm,2.5*cm,2.5*cm])
             tf_cq.setStyle(TableStyle(ts_cq))
             story.append(tf_cq)
 
@@ -2211,11 +2209,10 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 cells_mx = [Paragraph(rep[:18], cell_st)]
                 for ci, flia in enumerate(flias_mx, 1):
                     v = row_d.get(flia, np.nan)
-                    cells_mx.append(Paragraph(_vt_pdf(v), cell_st))
                     bg = _pdf_var_color(v)
+                    cells_mx.append(Paragraph(_vt_pdf(v), cell_wh_st if bg else cell_st))
                     if bg:
                         ts_mx.append(('BACKGROUND',(ci,ri),(ci,ri),bg))
-                        ts_mx.append(('TEXTCOLOR',(ci,ri),(ci,ri),rl_colors.white))
                 rows_mx.append(cells_mx)
             n_flias = len(flias_mx)
             rep_w = 3.5*cm
