@@ -2320,14 +2320,12 @@ app.index_string = '''
             button:disabled { opacity: 1 !important; cursor: not-allowed !important; }
 
             /* ── Login inputs ── */
-            #login-user, #login-pass {
+            .dash-input {
                 color: #F0EDE8 !important;
-                -webkit-text-fill-color: #F0EDE8 !important;
-                caret-color: #F0EDE8 !important;
                 background-color: #1E1E1E !important;
             }
-            #login-user:-webkit-autofill, #login-pass:-webkit-autofill,
-            #login-user:-webkit-autofill:focus, #login-pass:-webkit-autofill:focus {
+            .dash-input:-webkit-autofill,
+            .dash-input:-webkit-autofill:focus {
                 -webkit-box-shadow: 0 0 0px 1000px #1E1E1E inset !important;
                 -webkit-text-fill-color: #F0EDE8 !important;
             }
@@ -2430,9 +2428,6 @@ app.index_string = '''
 
 _LI = {   # login input style
     'backgroundColor': C['surf2'], 'color': C['text'],
-    'WebkitTextFillColor': C['text'],
-    'caretColor': C['text'],
-    'WebkitBoxShadow': f"0 0 0px 1000px {C['surf2']} inset",
     'border': f"1px solid {C['border']}", 'borderRadius': '2px',
     'padding': '10px 12px', 'fontSize': '13px', 'fontFamily': FONT,
     'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '10px',
