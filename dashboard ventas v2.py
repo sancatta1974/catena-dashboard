@@ -2417,6 +2417,9 @@ app.index_string = '''
 
 _LI = {   # login input style
     'backgroundColor': C['surf2'], 'color': C['text'],
+    'WebkitTextFillColor': C['text'],
+    'caretColor': C['text'],
+    'WebkitBoxShadow': f"0 0 0px 1000px {C['surf2']} inset",
     'border': f"1px solid {C['border']}", 'borderRadius': '2px',
     'padding': '10px 12px', 'fontSize': '13px', 'fontFamily': FONT,
     'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '10px',
