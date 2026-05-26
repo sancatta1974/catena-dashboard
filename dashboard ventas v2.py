@@ -1,6 +1,6 @@
 """
 Dashboard Comercial - Catena Zapata
-Santi Cattaneo - Jefatura Nacional de Ventas
+Santi Cattaneo - Gerencia Nacional de Ventas
 """
 
 import pandas as pd
@@ -2517,7 +2517,7 @@ app.layout = html.Div([
                     style={'color': C['gold'], 'fontSize': '22px', 'letterSpacing': '5px',
                            'textTransform': 'uppercase', 'margin': '0 0 4px 0',
                            'fontWeight': '400', 'fontFamily': FONT, 'textAlign': 'center'}),
-            html.P("Jefatura Nacional de Ventas",
+            html.P("Gerencia Nacional de Ventas",
                    style={'color': '#888888', 'fontSize': '9px', 'letterSpacing': '3px',
                           'textTransform': 'uppercase', 'textAlign': 'center', 'margin': '0 0 28px 0'}),
             html.Hr(style={'border': 'none', 'borderTop': '1px solid #333333', 'marginBottom': '24px'}),
@@ -2557,7 +2557,7 @@ app.layout = html.Div([
                 html.H1("CATENA ZAPATA", style={'color':C['gold'],'fontSize':'20px',
                                                 'letterSpacing':'4px','textTransform':'uppercase',
                                                 'margin':0,'fontWeight':'400','fontFamily':FONT}),
-                html.P("Dashboard Comercial — Jefatura Nacional de Ventas",
+                html.P("Dashboard Comercial — Gerencia Nacional de Ventas",
                        style={'color':C['muted'],'fontSize':'10px','letterSpacing':'2px',
                               'textTransform':'uppercase','margin':0}),
             ]),
