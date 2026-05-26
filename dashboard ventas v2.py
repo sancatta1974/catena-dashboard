@@ -2319,6 +2319,19 @@ app.index_string = '''
             button { -webkit-appearance: none !important; appearance: none !important; }
             button:disabled { opacity: 1 !important; cursor: not-allowed !important; }
 
+            /* ── Login inputs ── */
+            #login-user, #login-pass {
+                color: #F0EDE8 !important;
+                -webkit-text-fill-color: #F0EDE8 !important;
+                caret-color: #F0EDE8 !important;
+                background-color: #1E1E1E !important;
+            }
+            #login-user:-webkit-autofill, #login-pass:-webkit-autofill,
+            #login-user:-webkit-autofill:focus, #login-pass:-webkit-autofill:focus {
+                -webkit-box-shadow: 0 0 0px 1000px #1E1E1E inset !important;
+                -webkit-text-fill-color: #F0EDE8 !important;
+            }
+
             /* ── Scrollbar ── */
             ::-webkit-scrollbar { width: 6px; height: 6px; }
             ::-webkit-scrollbar-track { background: #161616; }
