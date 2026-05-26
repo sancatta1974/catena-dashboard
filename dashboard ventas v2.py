@@ -2323,20 +2323,24 @@ app.index_string = '''
 
             /* ── Login inputs ── */
             .dash-input {
+                -webkit-appearance: none !important;
+                appearance: none !important;
                 background-color: #FFFFFF !important;
-                color: #000000 !important;
-                -webkit-text-fill-color: #000000 !important;
+                color: #111111 !important;
+                -webkit-text-fill-color: #111111 !important;
                 color-scheme: light !important;
+                font-size: 16px !important;
             }
             .dash-input:focus {
                 background-color: #FFFFFF !important;
-                color: #000000 !important;
-                -webkit-text-fill-color: #000000 !important;
+                color: #111111 !important;
+                -webkit-text-fill-color: #111111 !important;
+                outline: 2px solid #C9A84C !important;
             }
             .dash-input:-webkit-autofill,
             .dash-input:-webkit-autofill:focus {
                 -webkit-box-shadow: 0 0 0px 1000px #FFFFFF inset !important;
-                -webkit-text-fill-color: #000000 !important;
+                -webkit-text-fill-color: #111111 !important;
             }
 
             /* ── Scrollbar ── */
@@ -2486,10 +2490,14 @@ app.index_string = '''
 '''
 
 _LI = {
-    'backgroundColor': '#F8F8F8', 'color': '#111111',
-    'border': '1px solid #CCCCCC', 'borderRadius': '4px',
-    'padding': '12px 14px', 'fontSize': '15px', 'fontFamily': FONT,
-    'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '12px',
+    'backgroundColor': '#FFFFFF', 'color': '#111111',
+    'WebkitTextFillColor': '#111111',
+    'WebkitAppearance': 'none', 'appearance': 'none',
+    'colorScheme': 'light',
+    'border': '1px solid #BBBBBB', 'borderRadius': '4px',
+    'padding': '14px 16px', 'fontSize': '16px', 'fontFamily': FONT,
+    'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '14px',
+    'display': 'block',
 }
 _BTN_LOGOUT = {
     'backgroundColor': 'transparent', 'color': C['muted'],
@@ -2510,10 +2518,10 @@ app.layout = html.Div([
                     style={'color': C['gold'], 'fontSize': '22px', 'letterSpacing': '5px',
                            'textTransform': 'uppercase', 'margin': '0 0 4px 0',
                            'fontWeight': '400', 'fontFamily': FONT, 'textAlign': 'center'}),
-            html.P("Dashboard Comercial",
-                   style={'color': '#555555', 'fontSize': '9px', 'letterSpacing': '3px',
+            html.P("Jefatura Nacional de Ventas",
+                   style={'color': '#888888', 'fontSize': '9px', 'letterSpacing': '3px',
                           'textTransform': 'uppercase', 'textAlign': 'center', 'margin': '0 0 28px 0'}),
-            html.Hr(style={'border': 'none', 'borderTop': '1px solid #DDDDDD', 'marginBottom': '24px'}),
+            html.Hr(style={'border': 'none', 'borderTop': '1px solid #333333', 'marginBottom': '24px'}),
             dcc.Input(id='login-user', type='text', placeholder='Usuario', debounce=False, style=_LI),
             dcc.Input(id='login-pass', type='password', placeholder='Contraseña', debounce=False, style=_LI),
             html.Div(id='login-error',
@@ -2530,13 +2538,13 @@ app.layout = html.Div([
                      style={'marginTop': '18px', 'textAlign': 'center',
                             'color': '#888888', 'fontSize': '9px', 'fontFamily': MONO}),
         ], style={
-            'backgroundColor': '#FFFFFF',
-            'border': '1px solid #DDDDDD',
+            'backgroundColor': '#161616',
+            'border': '1px solid #2A2A2A',
             'borderRadius': '6px',
             'padding': '44px 40px',
-            'width': '400px',
+            'width': '420px',
             'boxSizing': 'border-box',
-            'colorScheme': 'light',
+            'colorScheme': 'dark',
         }),
     ], style={'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center',
               'minHeight': '100vh', 'backgroundColor': C['bg']}),
