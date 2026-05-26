@@ -2557,7 +2557,7 @@ app.layout = html.Div([
                 html.H1("CATENA ZAPATA", style={'color':C['gold'],'fontSize':'20px',
                                                 'letterSpacing':'4px','textTransform':'uppercase',
                                                 'margin':0,'fontWeight':'400','fontFamily':FONT}),
-                html.P("Dashboard Comercial — Gerencia Nacional de Ventas",
+                html.P("Gerencia Nacional de Ventas",
                        style={'color':C['muted'],'fontSize':'10px','letterSpacing':'2px',
                               'textTransform':'uppercase','margin':0}),
             ]),
