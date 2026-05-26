@@ -2424,22 +2424,31 @@ app.index_string = '''
                 observer.observe(document.body, { childList: true, subtree: true });
             }
 
-            /* ── Forzar colores en inputs de login ── */
-            function fixLoginInputs() {
-                ['login-user','login-pass'].forEach(function(id) {
-                    var el = document.getElementById(id);
-                    if (!el) return;
-                    el.style.setProperty('background-color','#ffffff','important');
-                    el.style.setProperty('color','#000000','important');
-                    el.style.setProperty('-webkit-text-fill-color','#000000','important');
-                    el.style.setProperty('color-scheme','light','important');
-                });
-            }
-            document.addEventListener('input', fixLoginInputs);
-            document.addEventListener('focus', fixLoginInputs, true);
+            /* ── Forzar colores en inputs de login — inyectar style tag ── */
+            (function(){
+                var s = document.createElement('style');
+                s.textContent = [
+                    'input#login-user, input#login-pass {',
+                    '  background-color: #ffffff !important;',
+                    '  color: #000000 !important;',
+                    '  -webkit-text-fill-color: #000000 !important;',
+                    '  color-scheme: light !important;',
+                    '}',
+                    'input#login-user:focus, input#login-pass:focus {',
+                    '  background-color: #ffffff !important;',
+                    '  color: #000000 !important;',
+                    '  -webkit-text-fill-color: #000000 !important;',
+                    '}',
+                    'input#login-user:-webkit-autofill, input#login-pass:-webkit-autofill {',
+                    '  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;',
+                    '  -webkit-text-fill-color: #000000 !important;',
+                    '}'
+                ].join('\n');
+                document.head.appendChild(s);
+            })();
 
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function(){ init(); fixLoginInputs(); });
+                document.addEventListener('DOMContentLoaded', init);
             } else {
                 init();
             }
