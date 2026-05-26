@@ -506,7 +506,7 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error ranking: {e}')
 
-def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
+def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=False):
     try:
         if canal_sel:
             df = DFS['x repre x canal']
@@ -525,6 +525,8 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None):
         m['Total_a'] = m['Total_a'].fillna(0)
         m['Total_b'] = m['Total_b'].fillna(0)
         m = m[m['Total_a'] > 0]
+        if solo and repre_sel:
+            m = m[m['Vendedor'] == repre_sel]
         m['var']     = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
         m['sin_ant'] = m['Total_b'] == 0
         m['part']    = m['Total_a'] / m['Total_a'].sum() * 100
@@ -2426,8 +2428,8 @@ app.index_string = '''
 </html>
 '''
 
-_LI = {   # login input style
-    'backgroundColor': C['surf2'], 'color': C['text'],
+_LI = {   # login input style — fondo claro garantiza texto visible en todos los browsers
+    'backgroundColor': '#F5F2ED', 'color': '#1A1A1A',
     'border': f"1px solid {C['border']}", 'borderRadius': '2px',
     'padding': '10px 12px', 'fontSize': '13px', 'fontFamily': FONT,
     'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '10px',
@@ -2699,7 +2701,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
                 html.Button(pdf_label, id='btn-pdf', style=btn_style),
                 _pbt,
             ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '4px'}),
-            html.Div([dcc.Graph(figure=fig_repre_ranking(flia, canal, repre, meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_repre_ranking(flia, canal, repre, meses, solo=(auth and auth.get('role')=='vendedor')), config={'displayModeBar':False})], style=CARD),
             html.Div([dcc.Graph(figure=fig_canal_mix(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
         ])
 
