@@ -2458,12 +2458,11 @@ app.index_string = '''
 </html>
 '''
 
-_LI = {   # login input style
-    'backgroundColor': '#FFFFFF', 'color': '#000000',
-    'colorScheme': 'light',
-    'border': '1px solid #CCCCCC', 'borderRadius': '2px',
-    'padding': '10px 12px', 'fontSize': '13px', 'fontFamily': FONT,
-    'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '10px',
+_LI = {
+    'backgroundColor': '#F8F8F8', 'color': '#111111',
+    'border': '1px solid #CCCCCC', 'borderRadius': '4px',
+    'padding': '12px 14px', 'fontSize': '15px', 'fontFamily': FONT,
+    'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '12px',
 }
 _BTN_LOGOUT = {
     'backgroundColor': 'transparent', 'color': C['muted'],
@@ -2485,28 +2484,32 @@ app.layout = html.Div([
                            'textTransform': 'uppercase', 'margin': '0 0 4px 0',
                            'fontWeight': '400', 'fontFamily': FONT, 'textAlign': 'center'}),
             html.P("Dashboard Comercial",
-                   style={'color': C['muted'], 'fontSize': '9px', 'letterSpacing': '3px',
+                   style={'color': '#555555', 'fontSize': '9px', 'letterSpacing': '3px',
                           'textTransform': 'uppercase', 'textAlign': 'center', 'margin': '0 0 28px 0'}),
-            html.Hr(style={'border': 'none', 'borderTop': f"1px solid {C['border']}", 'marginBottom': '24px'}),
-            dcc.Input(id='login-user', type='text', placeholder='Usuario', style=_LI, debounce=False),
-            dcc.Input(id='login-pass', type='password', placeholder='Contraseña', style=_LI, debounce=False),
+            html.Hr(style={'border': 'none', 'borderTop': '1px solid #DDDDDD', 'marginBottom': '24px'}),
+            dcc.Input(id='login-user', type='text', placeholder='Usuario', debounce=False, style=_LI),
+            dcc.Input(id='login-pass', type='password', placeholder='Contraseña', debounce=False, style=_LI),
             html.Div(id='login-error',
-                     style={'color': C['red'], 'fontSize': '11px', 'marginBottom': '10px',
+                     style={'color': '#CC0000', 'fontSize': '11px', 'marginBottom': '10px',
                             'textAlign': 'center', 'minHeight': '16px'}),
             html.Button('INGRESAR', id='btn-login', n_clicks=0, style={
                 'backgroundColor': C['gold'], 'color': '#111', 'border': 'none',
-                'padding': '11px 0', 'fontSize': '10px', 'letterSpacing': '2.5px',
-                'textTransform': 'uppercase', 'cursor': 'pointer', 'borderRadius': '2px',
+                'padding': '13px 0', 'fontSize': '11px', 'letterSpacing': '2.5px',
+                'textTransform': 'uppercase', 'cursor': 'pointer', 'borderRadius': '3px',
                 'fontFamily': FONT, 'fontWeight': '700', 'width': '100%',
                 'WebkitAppearance': 'none', 'appearance': 'none',
             }),
-            html.Div([
-                html.Span("Vendedores: primera palabra del nombre / su clave",
-                          style={'color': C['muted'], 'fontSize': '9px', 'fontFamily': MONO}),
-            ], style={'marginTop': '18px', 'textAlign': 'center'}),
+            html.Div("Vendedores: primera palabra del nombre / su clave",
+                     style={'marginTop': '18px', 'textAlign': 'center',
+                            'color': '#888888', 'fontSize': '9px', 'fontFamily': MONO}),
         ], style={
-            'backgroundColor': C['surf'], 'border': f"1px solid {C['border']}",
-            'borderRadius': '4px', 'padding': '40px 36px', 'width': '380px', 'boxSizing': 'border-box',
+            'backgroundColor': '#FFFFFF',
+            'border': '1px solid #DDDDDD',
+            'borderRadius': '6px',
+            'padding': '44px 40px',
+            'width': '400px',
+            'boxSizing': 'border-box',
+            'colorScheme': 'light',
         }),
     ], style={'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center',
               'minHeight': '100vh', 'backgroundColor': C['bg']}),
