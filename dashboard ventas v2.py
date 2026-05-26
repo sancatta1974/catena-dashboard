@@ -2321,30 +2321,29 @@ app.index_string = '''
             button { -webkit-appearance: none !important; appearance: none !important; }
             button:disabled { opacity: 1 !important; cursor: not-allowed !important; }
 
-            /* ── Login inputs — estilo al <input> real, no al wrapper ── */
-            .dash-input {
-                display: block !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-                padding: 14px 16px !important;
-                font-size: 16px !important;
-                font-family: inherit !important;
+            /* ── Login inputs (fallback CSS) ── */
+            input[id="login-user"], input[id="login-pass"],
+            #login-user > input, #login-pass > input,
+            #login-user input, #login-pass input {
                 background-color: #FFFFFF !important;
                 color: #111111 !important;
                 -webkit-text-fill-color: #111111 !important;
                 color-scheme: light !important;
                 -webkit-appearance: none !important;
                 appearance: none !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+                padding: 14px 16px !important;
+                font-size: 16px !important;
                 border: 1px solid #BBBBBB !important;
                 border-radius: 4px !important;
                 outline: none !important;
+                display: block !important;
             }
-            .dash-input:focus {
-                border-color: #C9A84C !important;
-                outline: none !important;
-            }
-            .dash-input:-webkit-autofill,
-            .dash-input:-webkit-autofill:focus {
+            input[id="login-user"]:-webkit-autofill,
+            input[id="login-pass"]:-webkit-autofill,
+            #login-user input:-webkit-autofill,
+            #login-pass input:-webkit-autofill {
                 -webkit-box-shadow: 0 0 0px 1000px #FFFFFF inset !important;
                 -webkit-text-fill-color: #111111 !important;
             }
@@ -2434,56 +2433,43 @@ app.index_string = '''
                 observer.observe(document.body, { childList: true, subtree: true });
             }
 
-            /* ── Forzar colores en inputs de login ── */
+            /* ── Forzar estilos en inputs de login — busca el <input> real ── */
             (function(){
-                /* CSS: apunta tanto al wrapper con id como al input real adentro */
-                var s = document.createElement('style');
-                s.textContent = [
-                    '#login-user input, #login-pass input,',
-                    '.dash-input {',
-                    '  -webkit-appearance: none !important;',
-                    '  appearance: none !important;',
-                    '  background-color: #f8f8f8 !important;',
-                    '  color: #111111 !important;',
-                    '  -webkit-text-fill-color: #111111 !important;',
-                    '  color-scheme: light !important;',
-                    '}',
-                    '#login-user input:focus, #login-pass input:focus,',
-                    '.dash-input:focus {',
-                    '  background-color: #ffffff !important;',
-                    '  color: #111111 !important;',
-                    '  -webkit-text-fill-color: #111111 !important;',
-                    '}',
-                    '#login-user input:-webkit-autofill,',
-                    '#login-pass input:-webkit-autofill {',
-                    '  -webkit-box-shadow: 0 0 0 1000px #f8f8f8 inset !important;',
-                    '  -webkit-text-fill-color: #111111 !important;',
-                    '}'
-                ].join('\n');
-                document.head.appendChild(s);
-
-                /* JS: busca el input real dentro del wrapper */
-                function getInput(id) {
-                    var wrap = document.getElementById(id);
-                    if (!wrap) return null;
-                    return wrap.tagName === 'INPUT' ? wrap : wrap.querySelector('input');
-                }
-                function fixInputs() {
-                    ['login-user','login-pass'].forEach(function(id){
-                        var el = getInput(id);
-                        if (!el) return;
-                        el.style.setProperty('background-color','#ffffff','important');
-                        el.style.setProperty('color','#111111','important');
-                        el.style.setProperty('-webkit-text-fill-color','#111111','important');
-                        el.style.setProperty('-webkit-appearance','none','important');
-                        el.style.setProperty('color-scheme','light','important');
-                        el.setAttribute('autocomplete', id === 'login-pass' ? 'current-password' : 'username');
+                var PROPS = [
+                    ['background-color',       '#ffffff'],
+                    ['color',                  '#111111'],
+                    ['-webkit-text-fill-color','#111111'],
+                    ['color-scheme',           'light'],
+                    ['-webkit-appearance',     'none'],
+                    ['appearance',             'none'],
+                    ['width',                  '100%'],
+                    ['box-sizing',             'border-box'],
+                    ['padding',                '14px 16px'],
+                    ['font-size',              '16px'],
+                    ['font-family',            'inherit'],
+                    ['border',                 '1px solid #BBBBBB'],
+                    ['border-radius',          '4px'],
+                    ['outline',                'none'],
+                    ['display',                'block'],
+                    ['margin',                 '0'],
+                ];
+                function fix() {
+                    ['login-user', 'login-pass'].forEach(function(wid) {
+                        var wrap = document.getElementById(wid);
+                        if (!wrap) return;
+                        var inp = (wrap.tagName === 'INPUT') ? wrap : wrap.querySelector('input');
+                        if (!inp) return;
+                        PROPS.forEach(function(p){ inp.style.setProperty(p[0], p[1], 'important'); });
                     });
                 }
-                document.addEventListener('input', fixInputs);
-                document.addEventListener('focus', fixInputs, true);
-                setTimeout(fixInputs, 500);
-                setTimeout(fixInputs, 1500);
+                /* Disparar en múltiples momentos para cubrir el ciclo de render de Dash */
+                fix();
+                [50, 200, 500, 1000, 2000].forEach(function(ms){ setTimeout(fix, ms); });
+                /* Re-aplicar en cada cambio del DOM (Dash puede re-renderizar) */
+                new MutationObserver(fix).observe(document.body, {childList:true, subtree:true});
+                /* Re-aplicar al hacer foco o click */
+                document.addEventListener('focus', fix, true);
+                document.addEventListener('click', fix, true);
             })();
 
             if (document.readyState === 'loading') {
