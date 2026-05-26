@@ -195,9 +195,12 @@ _SKIP_REPS = {'directos casa interior'}
 _used_pins = {'piso3', 'tio', 'sofi'}
 _used_keys = {'jefe', 'florio', 'jorge'}
 USERS = {
-    'jefe':   {'password': 'piso3', 'role': 'admin',  'repre': None},
-    'florio': {'password': 'tio',   'role': 'viewer', 'repre': None},
-    'jorge':  {'password': 'sofi',  'role': 'viewer', 'repre': None},
+    'jefe':   {'password': 'piso3', 'role': 'admin',  'repre': None,
+               'display_name': 'SANTIAGO CATTANEO', 'title': 'Jefe Nacional de Ventas'},
+    'florio': {'password': 'tio',   'role': 'viewer', 'repre': None,
+               'display_name': 'TOMAS FLORIO', 'title': 'Gerente Nacional de Ventas'},
+    'jorge':  {'password': 'sofi',  'role': 'viewer', 'repre': None,
+               'display_name': 'JORGE ESTEBAN', 'title': ''},
 }
 for _r in REPRESENTANTES:
     if _norm(_r) in _SKIP_REPS:
@@ -210,7 +213,8 @@ for _r in REPRESENTANTES:
     _used_keys.add(_key)
     _pin = _make_pin(_r, _used_pins)
     _used_pins.add(_pin)
-    USERS[_key] = {'password': _pin, 'role': 'vendedor', 'repre': _r}
+    USERS[_key] = {'password': _pin, 'role': 'vendedor', 'repre': _r,
+                   'display_name': _r.upper(), 'title': ''}
 
 PL = dict(
     paper_bgcolor='rgba(0,0,0,0)',
@@ -3196,15 +3200,15 @@ def cb_toggle_pages(auth):
     _btn_refresh_hide = {'display': 'none'}
     if auth:
         role = auth.get('role')
-        if role == 'admin':
-            badge = "ADMIN — ACCESO COMPLETO"
-            btn_st = _btn_refresh_show
-        elif role == 'viewer':
-            badge = f"{auth.get('repre') or 'Visión total'} — solo lectura"
-            btn_st = _btn_refresh_hide
-        else:
-            badge = f"{auth.get('repre', '')} — vista personal"
-            btn_st = _btn_refresh_hide
+        btn_st = _btn_refresh_show if role == 'admin' else _btn_refresh_hide
+        name  = auth.get('display_name', auth.get('repre', '').upper())
+        title = auth.get('title', '')
+        badge = html.Div([
+            html.Div(name,  style={'color': C['gold'], 'fontSize': '11px',
+                                   'letterSpacing': '1px', 'fontWeight': '600'}),
+            html.Div(title, style={'color': C['muted'], 'fontSize': '9px',
+                                   'letterSpacing': '1px'}) if title else None,
+        ])
         return _login_hide, _dash_show, badge, btn_st
     return _login_show, _dash_hide, "", _btn_refresh_hide
 
