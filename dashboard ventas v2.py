@@ -2664,6 +2664,11 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
     )
 
     if tab == 'region':
+        if auth and auth.get('role') == 'vendedor':
+            return html.Div("Acceso restringido.", style={
+                'color': C['muted'], 'textAlign': 'center',
+                'padding': '60px', 'fontSize': '13px', 'letterSpacing': '2px'
+            })
         return html.Div([
             _pbt,
             html.Div([dcc.Graph(figure=fig_flia_ranking(flia, canal, meses), config={'displayModeBar':False})], style=CARD),
@@ -3247,6 +3252,17 @@ def cb_refresh_data(n, version):
     return (version or 0) + 1, ts
 
 # ── Run ────────────────────────────────────────────────────────────────────────
+
+@app.callback(
+    Output('tabs', 'value'),
+    Input('auth-store', 'data'),
+    prevent_initial_call=True,
+)
+def cb_vendor_tab_redirect(auth):
+    if auth and auth.get('role') == 'vendedor':
+        return 'repre'
+    return no_update
+
 
 def open_browser():
     webbrowser.open(f"http://localhost:{PORT}")
