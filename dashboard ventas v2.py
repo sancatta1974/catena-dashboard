@@ -192,11 +192,12 @@ def _make_pin(name, used):
 
 _SKIP_REPS = {'directos casa interior'}
 
-_used_pins = {'piso3', 'tio'}
-_used_keys = {'jefe', 'florio'}
+_used_pins = {'piso3', 'tio', 'sofi'}
+_used_keys = {'jefe', 'florio', 'jorge'}
 USERS = {
-    'jefe':   {'password': 'piso3', 'role': 'admin', 'repre': None},
-    'florio': {'password': 'tio',   'role': 'admin', 'repre': None},
+    'jefe':   {'password': 'piso3', 'role': 'admin',  'repre': None},
+    'florio': {'password': 'tio',   'role': 'viewer', 'repre': None},
+    'jorge':  {'password': 'sofi',  'role': 'viewer', 'repre': None},
 }
 for _r in REPRESENTANTES:
     if _norm(_r) in _SKIP_REPS:
@@ -2456,7 +2457,7 @@ app.layout = html.Div([
                 'WebkitAppearance': 'none', 'appearance': 'none',
             }),
             html.Div([
-                html.Span("Admin: jefe / piso3   |   Vendedores: primera palabra del nombre / su clave",
+                html.Span("Vendedores: primera palabra del nombre / su clave",
                           style={'color': C['muted'], 'fontSize': '9px', 'fontFamily': MONO}),
             ], style={'marginTop': '18px', 'textAlign': 'center'}),
         ], style={
@@ -3090,6 +3091,7 @@ def cb_auth(n_login, n_logout, usuario, password):
     Output('login-page', 'style'),
     Output('dashboard-page', 'style'),
     Output('user-badge', 'children'),
+    Output('btn-refresh', 'style'),
     Input('auth-store', 'data'),
 )
 def cb_toggle_pages(auth):
@@ -3098,13 +3100,27 @@ def cb_toggle_pages(auth):
     _login_hide = {'display': 'none'}
     _dash_show  = {}
     _dash_hide  = {'display': 'none'}
+    _btn_refresh_show = {
+        'backgroundColor': 'transparent', 'color': C['gold'], 'border': f"1px solid {C['gold']}",
+        'padding': '6px 14px', 'fontSize': '9px', 'letterSpacing': '1.5px',
+        'textTransform': 'uppercase', 'cursor': 'pointer', 'borderRadius': '2px',
+        'fontFamily': FONT, 'fontWeight': '600',
+        'WebkitAppearance': 'none', 'appearance': 'none', 'marginRight': '8px',
+    }
+    _btn_refresh_hide = {'display': 'none'}
     if auth:
-        if auth.get('role') == 'admin':
-            badge = "Admin — acceso completo"
+        role = auth.get('role')
+        if role == 'admin':
+            badge = "ADMIN — ACCESO COMPLETO"
+            btn_st = _btn_refresh_show
+        elif role == 'viewer':
+            badge = f"{auth.get('repre') or 'Visión total'} — solo lectura"
+            btn_st = _btn_refresh_hide
         else:
             badge = f"{auth.get('repre', '')} — vista personal"
-        return _login_hide, _dash_show, badge
-    return _login_show, _dash_hide, ""
+            btn_st = _btn_refresh_hide
+        return _login_hide, _dash_show, badge, btn_st
+    return _login_show, _dash_hide, "", _btn_refresh_hide
 
 
 @app.callback(
