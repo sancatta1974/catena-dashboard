@@ -190,7 +190,7 @@ def _make_pin(name, used):
         pin = str(1000 + (h % 9000))
     return pin
 
-_SKIP_REPS = {'directos casa interior'}
+_SKIP_REPS = {'directos casa interior', '69i'}
 
 _used_pins = {'piso3', 'tio', 'sofi'}
 _used_keys = {'jefe', 'florio', 'jorge'}
