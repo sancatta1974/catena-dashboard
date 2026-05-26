@@ -1034,7 +1034,8 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
                 vt = (tu - tp) / tp * 100
                 flags.append(('CRITICO', f"Desaceleración fuerte: {p}→{u} = {vt:+.0f}% en total región"))
 
-        # Clientes perdidos (fueron a 0)
+        # Clientes perdidos (fueron a 0) — agregar por cliente antes de comparar
+        # para no multiplicar por cantidad de familias ni de indicadores
         if 'x cliente' in DFS:
             cli = DFS['x cliente']
             act_c = get_ind(cli, 'Año Actual Cajas', ['Vendedor','Cliente','flia'])
@@ -1042,7 +1043,10 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
             if repre_sel:
                 act_c = act_c[act_c['Vendedor'] == repre_sel]
                 ant_c = ant_c[ant_c['Vendedor'] == repre_sel]
-            merged = ant_c[ant_c['Total'] > 0].merge(act_c, on=['Vendedor','Cliente','flia'], suffixes=('_b','_a'))
+            act_agg = act_c.groupby('Cliente')['Total'].sum().reset_index()
+            ant_agg = ant_c.groupby('Cliente')['Total'].sum().reset_index()
+            merged = ant_agg[ant_agg['Total'] > 0].merge(act_agg, on='Cliente', suffixes=('_b','_a'), how='left')
+            merged['Total_a'] = merged['Total_a'].fillna(0)
             perdidos = merged[merged['Total_a'] == 0]
             if not perdidos.empty:
                 n = len(perdidos)
