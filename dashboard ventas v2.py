@@ -2321,21 +2321,27 @@ app.index_string = '''
             button { -webkit-appearance: none !important; appearance: none !important; }
             button:disabled { opacity: 1 !important; cursor: not-allowed !important; }
 
-            /* ── Login inputs ── */
+            /* ── Login inputs — estilo al <input> real, no al wrapper ── */
             .dash-input {
-                -webkit-appearance: none !important;
-                appearance: none !important;
+                display: block !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+                padding: 14px 16px !important;
+                font-size: 16px !important;
+                font-family: inherit !important;
                 background-color: #FFFFFF !important;
                 color: #111111 !important;
                 -webkit-text-fill-color: #111111 !important;
                 color-scheme: light !important;
-                font-size: 16px !important;
+                -webkit-appearance: none !important;
+                appearance: none !important;
+                border: 1px solid #BBBBBB !important;
+                border-radius: 4px !important;
+                outline: none !important;
             }
             .dash-input:focus {
-                background-color: #FFFFFF !important;
-                color: #111111 !important;
-                -webkit-text-fill-color: #111111 !important;
-                outline: 2px solid #C9A84C !important;
+                border-color: #C9A84C !important;
+                outline: none !important;
             }
             .dash-input:-webkit-autofill,
             .dash-input:-webkit-autofill:focus {
@@ -2492,14 +2498,8 @@ app.index_string = '''
 '''
 
 _LI = {
-    'backgroundColor': '#FFFFFF', 'color': '#111111',
-    'WebkitTextFillColor': '#111111',
-    'WebkitAppearance': 'none', 'appearance': 'none',
-    'colorScheme': 'light',
-    'border': '1px solid #BBBBBB', 'borderRadius': '4px',
-    'padding': '14px 16px', 'fontSize': '16px', 'fontFamily': FONT,
-    'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '14px',
-    'display': 'block',
+    'display': 'block', 'width': '100%', 'marginBottom': '14px',
+    'padding': '0', 'border': 'none', 'backgroundColor': 'transparent',
 }
 _BTN_LOGOUT = {
     'backgroundColor': 'transparent', 'color': C['muted'],
