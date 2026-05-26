@@ -2424,27 +2424,54 @@ app.index_string = '''
                 observer.observe(document.body, { childList: true, subtree: true });
             }
 
-            /* ── Forzar colores en inputs de login — inyectar style tag ── */
+            /* ── Forzar colores en inputs de login ── */
             (function(){
+                /* CSS: apunta tanto al wrapper con id como al input real adentro */
                 var s = document.createElement('style');
                 s.textContent = [
-                    'input#login-user, input#login-pass {',
-                    '  background-color: #ffffff !important;',
-                    '  color: #000000 !important;',
-                    '  -webkit-text-fill-color: #000000 !important;',
+                    '#login-user input, #login-pass input,',
+                    '.dash-input {',
+                    '  -webkit-appearance: none !important;',
+                    '  appearance: none !important;',
+                    '  background-color: #f8f8f8 !important;',
+                    '  color: #111111 !important;',
+                    '  -webkit-text-fill-color: #111111 !important;',
                     '  color-scheme: light !important;',
                     '}',
-                    'input#login-user:focus, input#login-pass:focus {',
+                    '#login-user input:focus, #login-pass input:focus,',
+                    '.dash-input:focus {',
                     '  background-color: #ffffff !important;',
-                    '  color: #000000 !important;',
-                    '  -webkit-text-fill-color: #000000 !important;',
+                    '  color: #111111 !important;',
+                    '  -webkit-text-fill-color: #111111 !important;',
                     '}',
-                    'input#login-user:-webkit-autofill, input#login-pass:-webkit-autofill {',
-                    '  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;',
-                    '  -webkit-text-fill-color: #000000 !important;',
+                    '#login-user input:-webkit-autofill,',
+                    '#login-pass input:-webkit-autofill {',
+                    '  -webkit-box-shadow: 0 0 0 1000px #f8f8f8 inset !important;',
+                    '  -webkit-text-fill-color: #111111 !important;',
                     '}'
                 ].join('\n');
                 document.head.appendChild(s);
+
+                /* JS: busca el input real dentro del wrapper */
+                function getInput(id) {
+                    var wrap = document.getElementById(id);
+                    if (!wrap) return null;
+                    return wrap.tagName === 'INPUT' ? wrap : wrap.querySelector('input');
+                }
+                function fixInputs() {
+                    ['login-user','login-pass'].forEach(function(id){
+                        var el = getInput(id);
+                        if (!el) return;
+                        el.style.setProperty('background-color','#f8f8f8','important');
+                        el.style.setProperty('color','#111111','important');
+                        el.style.setProperty('-webkit-text-fill-color','#111111','important');
+                        el.style.setProperty('-webkit-appearance','none','important');
+                    });
+                }
+                document.addEventListener('input', fixInputs);
+                document.addEventListener('focus', fixInputs, true);
+                setTimeout(fixInputs, 500);
+                setTimeout(fixInputs, 1500);
             })();
 
             if (document.readyState === 'loading') {
