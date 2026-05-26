@@ -2326,6 +2326,12 @@ app.index_string = '''
                 background-color: #FFFFFF !important;
                 color: #000000 !important;
                 -webkit-text-fill-color: #000000 !important;
+                color-scheme: light !important;
+            }
+            .dash-input:focus {
+                background-color: #FFFFFF !important;
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
             }
             .dash-input:-webkit-autofill,
             .dash-input:-webkit-autofill:focus {
@@ -2431,6 +2437,7 @@ app.index_string = '''
 
 _LI = {   # login input style
     'backgroundColor': '#FFFFFF', 'color': '#000000',
+    'colorScheme': 'light',
     'border': '1px solid #CCCCCC', 'borderRadius': '2px',
     'padding': '10px 12px', 'fontSize': '13px', 'fontFamily': FONT,
     'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '10px',
