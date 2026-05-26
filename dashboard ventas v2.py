@@ -2323,13 +2323,14 @@ app.index_string = '''
 
             /* ── Login inputs ── */
             .dash-input {
-                color: #F0EDE8 !important;
-                background-color: #1E1E1E !important;
+                background-color: #FFFFFF !important;
+                color: #000000 !important;
+                -webkit-text-fill-color: #000000 !important;
             }
             .dash-input:-webkit-autofill,
             .dash-input:-webkit-autofill:focus {
-                -webkit-box-shadow: 0 0 0px 1000px #1E1E1E inset !important;
-                -webkit-text-fill-color: #F0EDE8 !important;
+                -webkit-box-shadow: 0 0 0px 1000px #FFFFFF inset !important;
+                -webkit-text-fill-color: #000000 !important;
             }
 
             /* ── Scrollbar ── */
@@ -2428,9 +2429,9 @@ app.index_string = '''
 </html>
 '''
 
-_LI = {   # login input style — fondo claro garantiza texto visible en todos los browsers
-    'backgroundColor': '#F5F2ED', 'color': '#1A1A1A',
-    'border': f"1px solid {C['border']}", 'borderRadius': '2px',
+_LI = {   # login input style
+    'backgroundColor': '#FFFFFF', 'color': '#000000',
+    'border': '1px solid #CCCCCC', 'borderRadius': '2px',
     'padding': '10px 12px', 'fontSize': '13px', 'fontFamily': FONT,
     'width': '100%', 'boxSizing': 'border-box', 'outline': 'none', 'marginBottom': '10px',
 }
