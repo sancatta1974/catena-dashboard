@@ -3201,7 +3201,7 @@ def cb_toggle_pages(auth):
     if auth:
         role = auth.get('role')
         btn_st = _btn_refresh_show if role == 'admin' else _btn_refresh_hide
-        name  = auth.get('display_name', auth.get('repre', '').upper())
+        name  = auth.get('display_name') or (auth.get('repre') or '').upper()
         title = auth.get('title', '')
         badge = html.Div([
             html.Div(name,  style={'color': C['gold'], 'fontSize': '11px',
