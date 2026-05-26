@@ -1018,7 +1018,11 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
                 flags.append(('ALERTA', f"Rep. {v}: caída de {pct:.0f}%"))
 
         # Familias con caída en todos los canales
-        var_canal = get_ind(DFS['x flia x canal'], 'Var %', ['flia','Canal'])
+        if repre_sel and 'x repre x canal' in DFS:
+            src_canal = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor'] == repre_sel]
+            var_canal = get_ind(src_canal, 'Var %', ['flia','Canal'])
+        else:
+            var_canal = get_ind(DFS['x flia x canal'], 'Var %', ['flia','Canal'])
         familias_check = [flia_sel] if flia_sel else FAMILIAS
         for flia in familias_check:
             sub = var_canal[var_canal['flia'] == flia]['Total'] * 100
@@ -1029,13 +1033,20 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
 
         # Desaceleración mes a mes (últimos 2 meses disponibles)
         if len(MC) >= 2:
-            act = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'])
+            if repre_sel and 'x repre' in DFS:
+                src_decel = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
+                grps_decel = ['Vendedor', 'flia']
+            else:
+                src_decel = DFS['x flia']
+                grps_decel = ['flia']
+            act = get_ind(src_decel, 'Año Actual Cajas', grps_decel)
             u, p = MC[-1], MC[-2]
             tu = pd.to_numeric(act[u], errors='coerce').sum()
             tp = pd.to_numeric(act[p], errors='coerce').sum()
             if tp > 0 and (tu - tp) / tp * 100 < -10:
                 vt = (tu - tp) / tp * 100
-                flags.append(('CRITICO', f"Desaceleración fuerte: {p}→{u} = {vt:+.0f}% en total región"))
+                label = "en tu zona" if repre_sel else "en total región"
+                flags.append(('CRITICO', f"Desaceleración fuerte: {p}→{u} = {vt:+.0f}% {label}"))
 
         # Clientes perdidos (fueron a 0) — agregar por cliente antes de comparar
         # para no multiplicar por cantidad de familias ni de indicadores
