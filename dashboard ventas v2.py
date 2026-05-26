@@ -2466,10 +2466,12 @@ app.index_string = '''
                     ['login-user','login-pass'].forEach(function(id){
                         var el = getInput(id);
                         if (!el) return;
-                        el.style.setProperty('background-color','#f8f8f8','important');
+                        el.style.setProperty('background-color','#ffffff','important');
                         el.style.setProperty('color','#111111','important');
                         el.style.setProperty('-webkit-text-fill-color','#111111','important');
                         el.style.setProperty('-webkit-appearance','none','important');
+                        el.style.setProperty('color-scheme','light','important');
+                        el.setAttribute('autocomplete', id === 'login-pass' ? 'current-password' : 'username');
                     });
                 }
                 document.addEventListener('input', fixInputs);
@@ -2544,7 +2546,7 @@ app.layout = html.Div([
             'padding': '44px 40px',
             'width': '420px',
             'boxSizing': 'border-box',
-            'colorScheme': 'dark',
+            'colorScheme': 'light',
         }),
     ], style={'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center',
               'minHeight': '100vh', 'backgroundColor': C['bg']}),
