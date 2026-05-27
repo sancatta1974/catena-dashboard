@@ -393,7 +393,10 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
     """Ranking de representantes y familias por var% — reemplaza el heatmap."""
     try:
         # ── Representantes ──
-        df_repre = DFS['x repre']
+        if canal_sel:
+            df_repre = DFS['x repre x canal'][DFS['x repre x canal']['Canal'] == canal_sel]
+        else:
+            df_repre = DFS['x repre']
         if repre_sel:
             df_repre = df_repre[df_repre['Vendedor'] == repre_sel]
         if flia_sel:
@@ -429,7 +432,10 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
                    for v, sa in zip(rep_df['Total_var'], sin_ant_rep)]
 
         # ── Familias ──
-        df_flia = DFS['x flia']
+        if canal_sel:
+            df_flia = DFS['x flia x canal'][DFS['x flia x canal']['Canal'] == canal_sel]
+        else:
+            df_flia = DFS['x flia']
         if flia_sel:
             df_flia = df_flia[df_flia['flia'] == flia_sel]
         if meses_sel:
