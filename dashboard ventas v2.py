@@ -352,7 +352,12 @@ def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None, repre_sel=None):
 
 def fig_evolucion(flia_sel, repre_sel=None, canal_sel=None, meses_sel=None):
     try:
-        if repre_sel:
+        if repre_sel and canal_sel:
+            df = DFS['x repre x canal']
+            df = df[(df['Vendedor'] == repre_sel) & (df['Canal'] == canal_sel)]
+            act = get_ind(df, 'Año Actual Cajas', ['flia'], meses_sel)
+            ant = get_ind(df, 'Año Anterior Cajas', ['flia'], meses_sel)
+        elif repre_sel:
             df = DFS['x repre']
             act = get_ind(df[df['Vendedor'] == repre_sel], 'Año Actual Cajas', ['flia'], meses_sel)
             ant = get_ind(df[df['Vendedor'] == repre_sel], 'Año Anterior Cajas', ['flia'], meses_sel)
@@ -656,9 +661,6 @@ def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
         if flia_sel:
             act = act[act['flia'] == flia_sel]
             ant = ant[ant['flia'] == flia_sel]
-        if canal_sel:
-            act = act[act['Canal'] == canal_sel]
-            ant = ant[ant['Canal'] == canal_sel]
         agg_a = act.groupby('Canal')['Total'].sum().reset_index()
         agg_b = ant.groupby('Canal')['Total'].sum().reset_index()
         m = agg_a.merge(agg_b, on='Canal', suffixes=('_a','_b'))
@@ -1099,9 +1101,15 @@ def generar_analisis_quirurgico(flia_sel=None, repre_sel=None, canal_sel=None, m
 
     # 1. Variación por familia — nivel región
     try:
-        src_f = DFS['x flia']
-        if repre_sel:
+        if repre_sel and canal_sel:
+            src_f = DFS['x repre x canal']
+            src_f = src_f[(src_f['Vendedor'] == repre_sel) & (src_f['Canal'] == canal_sel)]
+        elif repre_sel:
             src_f = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
+        elif canal_sel:
+            src_f = DFS['x flia x canal'][DFS['x flia x canal']['Canal'] == canal_sel]
+        else:
+            src_f = DFS['x flia']
         if flia_sel:
             src_f = src_f[src_f['flia'] == flia_sel]
         act_f = get_ind(src_f, 'Año Actual Cajas', ['flia'], meses_sel).groupby('flia')['Total'].sum()
