@@ -2043,9 +2043,9 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
             story.append(Spacer(1, 0.3*cm))
 
             # Top crecimiento
-            story.append(_pdf_section("TOP 10 — MAYOR CRECIMIENTO (cajas)", ds))
+            story.append(_pdf_section("TOP 20 — MAYOR CRECIMIENTO (cajas)", ds))
             rows = [['Cliente','Representante','Cajas Act','Δ Cajas','Var %']]
-            for _, r in datos['top_sube'].head(10).iterrows():
+            for _, r in datos['top_sube'].head(20).iterrows():
                 s = '+' if r['dif'] >= 0 else ''
                 vstr = f"{r['var']:+.0f}%" if pd.notna(r['var']) else '—'
                 rows.append([str(r['Cliente'])[:26], str(r['Vendedor'])[:20],
@@ -2054,32 +2054,13 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
             story.append(Spacer(1, 0.3*cm))
 
             # Top caída
-            story.append(_pdf_section("TOP 10 — MAYOR CAÍDA (cajas)", ds))
+            story.append(_pdf_section("TOP 20 — MAYOR CAÍDA (cajas)", ds))
             rows2 = [['Cliente','Representante','Cajas Act','Δ Cajas','Var %']]
-            for _, r in datos['top_baja'].head(10).iterrows():
+            for _, r in datos['top_baja'].head(20).iterrows():
                 vstr = f"{r['var']:+.0f}%" if pd.notna(r['var']) else '—'
                 rows2.append([str(r['Cliente'])[:26], str(r['Vendedor'])[:20],
                                f"{int(r['act']):,}", f"{int(r['dif']):,}", vstr])
             story.append(_pdf_tbl(rows2, [5*cm, 4*cm, 2.5*cm, 2.5*cm, 2.5*cm], var_cols=(4,), right_cols=(2,3,4)))
-            story.append(Spacer(1, 0.3*cm))
-
-            # Con crecimiento / con caídas
-            if not datos['nuevos'].empty:
-                story.append(_pdf_section(f"CON CRECIMIENTO — TOP 10 (de {n} total)", ds))
-                rowsN = [['Cliente','Representante','Cajas Act','Δ Cajas']]
-                for _, r in datos['nuevos'].nlargest(10,'dif').iterrows():
-                    rowsN.append([str(r['Cliente'])[:30], str(r['Vendedor'])[:22],
-                                  f"{int(r['act']):,}", f"+{int(r['dif']):,}"])
-                story.append(_pdf_tbl(rowsN, [6*cm, 4.5*cm, 2.5*cm, 2.5*cm]))
-                story.append(Spacer(1, 0.3*cm))
-
-            if not datos['perdidos'].empty:
-                story.append(_pdf_section(f"CON CAÍDAS — TOP 10 (de {p} total)", ds))
-                rowsP = [['Cliente','Representante','Cajas Act','Δ Cajas']]
-                for _, r in datos['perdidos'].nsmallest(10,'dif').iterrows():
-                    rowsP.append([str(r['Cliente'])[:30], str(r['Vendedor'])[:22],
-                                  f"{int(r['act']):,}", f"{int(r['dif']):,}"])
-                story.append(_pdf_tbl(rowsP, [6*cm, 4.5*cm, 2.5*cm, 2.5*cm]))
 
         except Exception as e:
             story.append(Paragraph(f"Error clientes: {e}", ds['alert']))
