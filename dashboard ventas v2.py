@@ -1613,7 +1613,7 @@ def generar_pdf_repre(repre_sel):
             mc3['vp']  = mc3['dif'] / mc3['Total_b'] * 100
 
             rows_up = [['Cliente', 'Familia', 'Cajas Act.', 'Δ Cajas', 'Var %']]
-            for _, r in mc3.nlargest(8, 'dif').iterrows():
+            for _, r in mc3.nlargest(20, 'dif').iterrows():
                 s = '+' if r['vp'] >= 0 else ''
                 rows_up.append([str(r['Cliente'])[:28], str(r['flia'])[:16],
                                  f"{int(r['Total_a']):,}", f"+{int(r['dif']):,}",
@@ -1624,7 +1624,7 @@ def generar_pdf_repre(repre_sel):
 
             story.append(Spacer(1, 0.3*cm))
             rows_dn = [['Cliente', 'Familia', 'Cajas Act.', 'Δ Cajas', 'Var %']]
-            for _, r in mc3.nsmallest(8, 'dif').iterrows():
+            for _, r in mc3.nsmallest(20, 'dif').iterrows():
                 s = '+' if r['vp'] >= 0 else ''
                 rows_dn.append([str(r['Cliente'])[:28], str(r['flia'])[:16],
                                  f"{int(r['Total_a']):,}", f"{int(r['dif']):,}",
@@ -1986,19 +1986,19 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                     mc3 = mc3[mc3['Total_b']>0]
                     mc3['dif'] = mc3['Total_a']-mc3['Total_b']
                     mc3['vp']  = mc3['dif']/mc3['Total_b']*100
-                    rows = [['Cliente','Familia','Cajas Act','Var %']]
-                    for _, r in mc3.nlargest(8,'dif').iterrows():
+                    rows = [['Cliente','Familia','Cajas Act','Δ Cajas','Var %']]
+                    for _, r in mc3.nlargest(20,'dif').iterrows():
                         s2 = '+' if r['vp']>=0 else ''
                         rows.append([str(r['Cliente'])[:28], str(r['flia'])[:14],
-                                      f"{int(r['Total_a']):,}", f"{s2}{r['vp']:.0f}%"])
+                                      f"{int(r['Total_a']):,}", f"+{int(r['dif']):,}", f"{s2}{r['vp']:.0f}%"])
                     story.append(_pdf_section("Mayor crecimiento", ds))
-                    story.append(_pdf_tbl(rows, [7*cm, 3.5*cm, 2.5*cm, 2.5*cm], var_cols=(3,)))
+                    story.append(_pdf_tbl(rows, [6*cm, 3*cm, 2.5*cm, 2.5*cm, 2.5*cm], var_cols=(4,), right_cols=(2,3,4)))
                     story.append(Spacer(1, 0.2*cm))
-                    rows2 = [['Cliente','Familia','Cajas Act','Var %']]
-                    for _, r in mc3.nsmallest(8,'dif').iterrows():
+                    rows2 = [['Cliente','Familia','Cajas Act','Δ Cajas','Var %']]
+                    for _, r in mc3.nsmallest(20,'dif').iterrows():
                         s2 = '+' if r['vp']>=0 else ''
                         rows2.append([str(r['Cliente'])[:28], str(r['flia'])[:14],
-                                       f"{int(r['Total_a']):,}", f"{s2}{r['vp']:.0f}%"])
+                                       f"{int(r['Total_a']):,}", f"{int(r['dif']):,}", f"{s2}{r['vp']:.0f}%"])
                     story.append(_pdf_section("Mayor caída", ds))
                     story.append(_pdf_tbl(rows2, [7*cm, 3.5*cm, 2.5*cm, 2.5*cm], var_cols=(3,)))
             except Exception as e:
