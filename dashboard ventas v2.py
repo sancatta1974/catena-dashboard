@@ -788,8 +788,8 @@ def analisis_clientes(repre_sel, flia_sel, meses_sel=None):
         'full': full, 'nuevos': con_crecimiento, 'perdidos': con_caida, 'activos': activos,
         'nuevos_cli': nuevos_cli, 'crecieron': crecieron,
         'cayeron': cayeron, 'perdidos_cli': perdidos_cli,
-        'top_sube': full[full['dif'] > 0].nlargest(20, 'dif').sort_values('dif'),
-        'top_baja': full[full['dif'] < 0].nsmallest(20, 'dif').sort_values('dif', ascending=False),
+        'top_sube': full[full['dif'] > 0].nlargest(20, 'dif').sort_values('dif', ascending=False),
+        'top_baja': full[full['dif'] < 0].nsmallest(20, 'dif').sort_values('dif'),
     }
 
 def fig_clientes_variacion(datos):
