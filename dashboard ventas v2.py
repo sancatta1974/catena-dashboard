@@ -247,14 +247,23 @@ def _cap_var(v, sin_ant=False):
 
 # ── Figuras ────────────────────────────────────────────────────────────────────
 
-def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None):
+def fig_flia_ranking(flia_sel, canal_sel, meses_sel=None, repre_sel=None):
     """Dual-panel horizontal: familias ordenadas por volumen + variación % | participación %."""
     try:
-        if canal_sel:
+        if canal_sel and repre_sel:
+            df = DFS['x repre x canal']
+            df = df[(df['Canal'] == canal_sel) & (df['Vendedor'] == repre_sel)]
+            act = get_ind(df, 'Año Actual Cajas', ['flia'], meses_sel).groupby('flia')[['Total']].sum().reset_index()
+            ant = get_ind(df, 'Año Anterior Cajas', ['flia'], meses_sel).groupby('flia')[['Total']].sum().reset_index()
+        elif canal_sel:
             df = DFS['x flia x canal']
             df = df[df['Canal'] == canal_sel]
             act = get_ind(df, 'Año Actual Cajas', ['flia'], meses_sel).groupby('flia')[['Total']].sum().reset_index()
             ant = get_ind(df, 'Año Anterior Cajas', ['flia'], meses_sel).groupby('flia')[['Total']].sum().reset_index()
+        elif repre_sel:
+            df = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
+            act = get_ind(df, 'Año Actual Cajas', ['flia'], meses_sel)
+            ant = get_ind(df, 'Año Anterior Cajas', ['flia'], meses_sel)
         else:
             act = get_ind(DFS['x flia'], 'Año Actual Cajas', ['flia'], meses_sel)
             ant = get_ind(DFS['x flia'], 'Año Anterior Cajas', ['flia'], meses_sel)
@@ -2728,7 +2737,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
             })
         return html.Div([
             _pbt,
-            html.Div([dcc.Graph(figure=fig_flia_ranking(flia, canal, meses), config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(figure=fig_flia_ranking(flia, canal, meses, repre), config={'displayModeBar':False})], style=CARD),
             html.Div([dcc.Graph(figure=fig_evolucion(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
             html.Div([dcc.Graph(figure=fig_ranking_ejecutivo(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
         ])
