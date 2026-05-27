@@ -1608,6 +1608,8 @@ def generar_pdf_repre(repre_sel):
             ac2 = get_ind(cli, 'Año Actual Cajas', ['Vendedor','Cliente','flia'])
             an2 = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente','flia'])
             mc3 = ac2.merge(an2, on=['Vendedor','Cliente','flia'], suffixes=('_a','_b'))
+            if flia_sel:
+                mc3 = mc3[mc3['flia'] == flia_sel]
             mc3 = mc3[mc3['Total_b'] > 0]
             mc3['dif'] = mc3['Total_a'] - mc3['Total_b']
             mc3['vp']  = mc3['dif'] / mc3['Total_b'] * 100
@@ -1983,6 +1985,8 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                     ac2 = get_ind(cli, 'Año Actual Cajas', ['Vendedor','Cliente','flia'])
                     an2 = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente','flia'])
                     mc3 = ac2.merge(an2, on=['Vendedor','Cliente','flia'], suffixes=('_a','_b'))
+                    if flia_sel:
+                        mc3 = mc3[mc3['flia'] == flia_sel]
                     mc3 = mc3[mc3['Total_b']>0]
                     mc3['dif'] = mc3['Total_a']-mc3['Total_b']
                     mc3['vp']  = mc3['dif']/mc3['Total_b']*100
