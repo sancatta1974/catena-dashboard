@@ -1545,7 +1545,7 @@ def generar_pdf_repre(repre_sel):
         act2  = get_ind(df_r2, 'Año Actual Cajas', ['Vendedor','flia'])
         ant2  = get_ind(df_r2, 'Año Anterior Cajas', ['Vendedor','flia'])
         rows = [['Mes', 'Año Actual', 'Año Anterior', 'Variación %']]
-        for m in reversed(MC):
+        for m in MC:
             if m in act2.columns:
                 va = pd.to_numeric(act2[m], errors='coerce').sum()
                 vb = pd.to_numeric(ant2[m], errors='coerce').sum() if m in ant2.columns else 0
@@ -1925,7 +1925,7 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 act2  = get_ind(df_r2, 'Año Actual Cajas', ['Vendedor','flia'])
                 ant2  = get_ind(df_r2, 'Año Anterior Cajas', ['Vendedor','flia'])
                 mes_rows = [['Mes','Año Actual','Año Anterior','Var %']]
-                for m in reversed(MC):
+                for m in MC:
                     if m in act2.columns:
                         va = pd.to_numeric(act2[m], errors='coerce').sum()
                         vb = pd.to_numeric(ant2[m], errors='coerce').sum() if m in ant2.columns else 0
