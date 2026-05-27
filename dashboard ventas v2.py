@@ -2635,7 +2635,7 @@ app.layout = html.Div([
                     html.Div('Meses', style=LABEL),
                     dcc.Dropdown(
                         id='dd-meses',
-                        options=[{'label': m, 'value': m} for m in MC],
+                        options=[{'label': m, 'value': m} for m in reversed(MC)],
                         value=None,
                         multi=True,
                         placeholder='Todos',
@@ -3236,7 +3236,7 @@ def cb_update_dropdown_options(_ver):
     flia_opts  = [{'label':'Todas','value':''}] + [{'label':f,'value':f} for f in FAMILIAS]
     repre_opts = [{'label':'Todos','value':''}] + [{'label':r,'value':r} for r in REPRESENTANTES]
     canal_opts = [{'label':'Todos','value':''}] + [{'label':c,'value':c} for c in CANALES]
-    mes_opts   = [{'label':m,'value':m} for m in MC]
+    mes_opts   = [{'label':m,'value':m} for m in reversed(MC)]
     return flia_opts, repre_opts, canal_opts, mes_opts
 
 
