@@ -3216,17 +3216,19 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
                 df = df.sort_values('Var%', na_position='last').reset_index(drop=True)
                 def _safe_vv(v):
                     if pd.isna(v): return '—'
+                    if abs(v) >= VAR_CAP: return f"{'+'if v>=0 else ''}{v:.0f}%*"
                     return f"{'+'if v>=0 else ''}{v:.0f}%"
+                # capear la barra (igual que el resto del dash) pero mostrar el valor real en el texto
+                bar_x = df['Var%'].apply(lambda v: max(-VAR_CAP, min(VAR_CAP, v)) if pd.notna(v) else 0)
                 bar_colors = [C['red'] if (pd.notna(v) and v < 0) else C['green'] for v in df['Var%']]
                 bar_texts  = [f"{_safe_vv(v)}  {int(a):,}" for v, a in zip(df['Var%'], df['Actual'])]
-                vv = df['Var%'].dropna()
-                x_max = (max(abs(vv.max()), abs(vv.min())) if not vv.empty else 10) * 1.6
-                x_max = max(x_max, 10)
+                x_max = VAR_CAP * 1.3
                 fig = go.Figure(go.Bar(
-                    x=df['Var%'].fillna(0), y=df[col_name], orientation='h',
+                    x=bar_x, y=df[col_name], orientation='h',
                     marker_color=bar_colors, text=bar_texts,
                     textposition='outside', textfont=dict(size=10, color=C['text'], family=MONO),
-                    cliponaxis=False, hovertemplate='%{y}: %{x:+.0f}%<extra></extra>',
+                    cliponaxis=False, hovertemplate='%{y}: %{customdata:+.0f}%<extra></extra>',
+                    customdata=df['Var%'].fillna(0),
                 ))
                 fig.update_layout(
                     title=dict(text=title, font=dict(size=10, color=C['muted']), x=0, pad=dict(l=0)),
