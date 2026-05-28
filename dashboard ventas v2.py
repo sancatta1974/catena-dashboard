@@ -1262,20 +1262,29 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
 
         # Clientes perdidos (fueron a 0) — agregar por cliente antes de comparar
         # para no multiplicar por cantidad de familias ni de indicadores
-        if 'x cliente' in DFS:
-            cli = DFS['x cliente']
-            act_c = get_ind(cli, 'Año Actual Cajas', ['Vendedor','Cliente','flia'])
-            ant_c = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente','flia'])
+        if canal_sel and 'x cliente x canal' in DFS:
+            cli_src = DFS['x cliente x canal'].copy()
+            cli_src = cli_src[cli_src['Canal'] == canal_sel]
+            cli_grps = ['Vendedor','Canal','Cliente','flia']
+        elif 'x cliente' in DFS:
+            cli_src = DFS['x cliente'].copy()
+            cli_grps = ['Vendedor','Cliente','flia']
+        else:
+            cli_src = None
+        if cli_src is not None:
             if repre_sel:
-                act_c = act_c[act_c['Vendedor'] == repre_sel]
-                ant_c = ant_c[ant_c['Vendedor'] == repre_sel]
-            act_agg = act_c.groupby('Cliente')['Total'].sum().reset_index()
-            ant_agg = ant_c.groupby('Cliente')['Total'].sum().reset_index()
-            merged = ant_agg[ant_agg['Total'] > 0].merge(act_agg, on='Cliente', suffixes=('_b','_a'), how='left')
-            merged['Total_a'] = merged['Total_a'].fillna(0)
-            perdidos = merged[merged['Total_a'] == 0]
-            if not perdidos.empty:
-                n = len(perdidos)
+                cli_src = cli_src[cli_src['Vendedor'] == repre_sel]
+            if flia_sel:
+                cli_src = cli_src[cli_src['flia'] == flia_sel]
+            act_c = get_ind(cli_src, 'Año Actual Cajas',   cli_grps, meses_sel)
+            ant_c = get_ind(cli_src, 'Año Anterior Cajas', cli_grps, meses_sel)
+            act_agg = act_c.groupby('Cliente')['Total'].sum()
+            ant_agg = ant_c.groupby('Cliente')['Total'].sum()
+            # usar misma lógica que build_kpis: suma neta > 0
+            c_act = set(act_agg[act_agg > 0].index)
+            c_ant = set(ant_agg[ant_agg > 0].index)
+            n = len(c_ant - c_act)
+            if n > 0:
                 flags.append(('ALERTA', f"{n} cliente{'s' if n>1 else ''} con 0 cajas este año (activos el año anterior)"))
 
     except Exception as e:
@@ -1506,8 +1515,11 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
             cli = cli[cli['flia'] == flia_sel]
         act_cli = get_ind(cli, 'Año Actual Cajas',   grps, meses_sel)
         ant_cli = get_ind(cli, 'Año Anterior Cajas', grps, meses_sel)
-        clientes_act = set(act_cli[act_cli['Total'] > 0]['Cliente'].unique())
-        clientes_ant = set(ant_cli[ant_cli['Total'] > 0]['Cliente'].unique())
+        # Suma neta por cliente para evitar contar clientes con compensaciones parciales
+        act_sum = act_cli.groupby('Cliente')['Total'].sum()
+        ant_sum = ant_cli.groupby('Cliente')['Total'].sum()
+        clientes_act = set(act_sum[act_sum > 0].index)
+        clientes_ant = set(ant_sum[ant_sum > 0].index)
         n_inactivos = len(clientes_ant - clientes_act)
         n_nuevos    = len(clientes_act - clientes_ant)
         n_activos   = len(clientes_act)          # total que compró este año (incluye nuevos)
@@ -3144,7 +3156,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
 
         def _ranking_fig(df, col_name, title):
             _empty_fig = go.Figure()
-            _empty_fig.update_layout(paper_bgcolor=C['card'], plot_bgcolor=C['card'],
+            _empty_fig.update_layout(paper_bgcolor=C['surf'], plot_bgcolor=C['surf'],
                 font_color=C['muted'], height=260, margin=dict(l=10,r=10,t=40,b=10))
             _empty_fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False,
                 font=dict(size=12, color=C['muted']), xref='paper', yref='paper')
@@ -3171,7 +3183,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
                 ))
                 fig.update_layout(
                     title=dict(text=title, font=dict(size=10, color=C['muted']), x=0, pad=dict(l=0)),
-                    paper_bgcolor=C['card'], plot_bgcolor=C['card'],
+                    paper_bgcolor=C['surf'], plot_bgcolor=C['surf'],
                     font=dict(color=C['text'], family='Arial'),
                     xaxis=dict(range=[-x_max, x_max], showgrid=True, gridcolor=C['border'],
                         zeroline=True, zerolinecolor=C['border'], zerolinewidth=1,
