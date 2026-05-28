@@ -617,7 +617,7 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
 
         fig = make_subplots(
             rows=1, cols=3,
-            column_widths=[0.32, 0.48, 0.20],
+            column_widths=[0.30, 0.45, 0.25],
             subplot_titles=['Variación % vs Año Anterior', 'Cajas Año Actual', 'Cartera de Clientes'],
             shared_yaxes=True,
         )
@@ -659,6 +659,7 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
             textfont=dict(size=11, color=C['text']),
             showlegend=False,
             hoverinfo='skip',
+            cliponaxis=False,
         ), row=1, col=2)
 
         # ── Panel derecho: Cartera de clientes ──
@@ -694,13 +695,14 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
                 textfont=dict(size=10, color=C['text'], family=MONO),
                 showlegend=False,
                 hoverinfo='skip',
+                cliponaxis=False,
             ), row=1, col=3)
 
         title = f'Representantes — Ranking | {repre_sel}' if repre_sel else 'Representantes — Ranking y Variación'
         _pl = {k: v for k, v in PL.items() if k != 'margin'}
         fig.update_layout(
             **_pl, title=title, height=altura, showlegend=False,
-            margin=dict(l=10, r=90, t=46, b=20),
+            margin=dict(l=10, r=160, t=46, b=20),
         )
         cap = VAR_CAP * 1.25
         fig.update_xaxes(range=[-cap, cap], tickfont=dict(size=9), row=1, col=1)
