@@ -711,6 +711,120 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
     except Exception as e:
         return go.Figure().update_layout(**PL, title=f'Error: {e}')
 
+def fig_top10_concentracion(repre_sel, flia_sel=None, canal_sel=None, meses_sel=None):
+    """TOP 10 clientes por volumen con % individual y acumulado — vista por representante."""
+    try:
+        if canal_sel and 'x cliente x canal' in DFS:
+            cli = DFS['x cliente x canal'].copy()
+            cli = cli[cli['Canal'] == canal_sel]
+            grps = ['Vendedor','Canal','Cliente','flia']
+        else:
+            cli = DFS['x cliente'].copy()
+            grps = ['Vendedor','Cliente','flia']
+        cli = cli[cli['Vendedor'].str.strip() == repre_sel]
+        if flia_sel:
+            cli = cli[cli['flia'] == flia_sel]
+
+        act = get_ind(cli, 'Año Actual Cajas', grps, meses_sel)
+        ant = get_ind(cli, 'Año Anterior Cajas', grps, meses_sel)
+
+        # Agrupar por cliente (suma familias)
+        act_c = act.groupby('Cliente')['Total'].sum().reset_index()
+        ant_c = ant.groupby('Cliente')['Total'].sum().reset_index()
+        act_c['Cliente'] = act_c['Cliente'].str.strip()
+        ant_c['Cliente'] = ant_c['Cliente'].str.strip()
+
+        todos = act_c[act_c['Total'] > 0].copy()
+        total_cajas = float(todos['Total'].sum())
+        total_cli   = int(len(todos))
+
+        top10 = todos.sort_values('Total', ascending=False).head(10).copy()
+        top10['pct']      = top10['Total'] / total_cajas * 100
+        top10['pct_acum'] = top10['pct'].cumsum()
+
+        # Merge con anterior para mostrar variación
+        top10 = top10.merge(ant_c.rename(columns={'Total':'Total_ant'}), on='Cliente', how='left')
+        top10['Total_ant'] = top10['Total_ant'].fillna(0)
+        top10['var'] = (top10['Total'] - top10['Total_ant']) / top10['Total_ant'].replace(0, np.nan) * 100
+        top10['sin_ant'] = top10['Total_ant'] == 0
+
+        top10 = top10.iloc[::-1].reset_index(drop=True)  # invertir para barh
+
+        # Colores: más opaco = mayor volumen (top 3 dorado pleno, resto más suave)
+        n = len(top10)
+        alphas = [1.0 if i >= n-3 else (0.65 if i >= n-6 else 0.35) for i in range(n)]
+        cols = [(184/255, 151/255, 42/255, a) for a in alphas]
+
+        nombres = [c[:34] for c in top10['Cliente']]
+        xmax = float(top10['Total'].max())
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Bar(
+            y=nombres,
+            x=top10['Total'],
+            orientation='h',
+            marker=dict(
+                color=[f"rgba(184,151,42,{a})" for a in alphas],
+                line=dict(width=0),
+            ),
+            text=[f"{int(v):,} caj" for v in top10['Total']],
+            textposition='inside',
+            insidetextanchor='middle',
+            textfont=dict(size=11, color='#FFFFFF', family=MONO),
+            customdata=list(zip(
+                top10['pct'].round(1),
+                top10['pct_acum'].round(0),
+                [_var(r['var'], r['sin_ant'], r['Total']) for _, r in top10.iterrows()],
+                top10['Total_ant'].astype(int),
+            )),
+            hovertemplate=(
+                '<b>%{y}</b><br>'
+                'Cajas actual: %{x:,.0f}<br>'
+                'Cajas anterior: %{customdata[3]:,}<br>'
+                'Var: %{customdata[2]}<br>'
+                'Part: %{customdata[0]:.1f}%  (acum. %{customdata[1]:.0f}%)'
+                '<extra></extra>'
+            ),
+        ))
+
+        # % individual y acumulado a la derecha de cada barra
+        fig.add_trace(go.Scatter(
+            y=nombres,
+            x=top10['Total'],
+            text=[f"  {p:.1f}%  (acum. {a:.0f}%)"
+                  for p, a in zip(top10['pct'], top10['pct_acum'])],
+            mode='text',
+            textposition='middle right',
+            textfont=dict(size=10, color=C['gold'], family=MONO),
+            showlegend=False,
+            hoverinfo='skip',
+        ))
+
+        filtro_txt = " | ".join(filter(None, [flia_sel, canal_sel])) or "todas las familias y canales"
+        mix = total_cajas / total_cli if total_cli > 0 else 0
+        titulo = (
+            f"TOP 10 Clientes — {repre_sel}  "
+            f"|  {total_cli} clientes activos"
+            f"|  Concentración top 10: {top10['pct'].sum():.0f}% del volumen"
+        )
+
+        pl_r = {k: v for k, v in PL.items() if k not in ('xaxis','yaxis','margin')}
+        height = max(280, n * 38 + 70)
+        fig.update_layout(
+            **pl_r,
+            title=titulo,
+            height=height,
+            showlegend=False,
+            margin=dict(l=10, r=200, t=46, b=24),
+            xaxis=dict(showticklabels=False, showgrid=False, zeroline=False,
+                       range=[0, xmax * 1.55]),
+            yaxis=dict(tickfont=dict(size=10, color=C['text'])),
+        )
+        return fig
+    except Exception as e:
+        return go.Figure().update_layout(**PL, title=f'Error top10: {e}')
+
 def fig_canal_mix(flia_sel, repre_sel, canal_sel=None, meses_sel=None):
     """Participación % por canal — gráfico de barras horizontales limpio."""
     try:
@@ -2890,7 +3004,9 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
             ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '4px'}),
             html.Div([dcc.Graph(figure=fig_repre_ranking(flia, canal, repre, meses, solo=(auth and auth.get('role')=='vendedor')), config={'displayModeBar':False})], style=CARD),
             html.Div([dcc.Graph(figure=fig_canal_mix(flia, repre, canal, meses), config={'displayModeBar':False})], style=CARD),
-        ])
+        ] + ([
+            html.Div([dcc.Graph(figure=fig_top10_concentracion(repre, flia, canal, meses), config={'displayModeBar':False})], style=CARD),
+        ] if repre else []))
 
     elif tab == 'clientes':
         try:
