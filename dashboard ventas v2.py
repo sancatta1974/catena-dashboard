@@ -182,6 +182,20 @@ def _norm(s):
     """Normaliza a ASCII lowercase para comparar usernames sin tildes."""
     return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii').lower().strip()
 
+def _filter_vendedor(df, repre_sel, col='Vendedor'):
+    """Filtra df por vendedor con fallback normalizado para tolerar espacios y variantes de nombre."""
+    if not repre_sel or col not in df.columns:
+        return df
+    key = str(repre_sel).strip()
+    # intento exacto
+    mask = df[col].str.strip() == key
+    if mask.any():
+        return df[mask]
+    # fallback: comparación normalizada (sin tildes, uppercase, sin espacios extra)
+    key_n = _norm(key).replace(' ', '')
+    mask_n = df[col].str.strip().apply(lambda v: _norm(str(v)).replace(' ', '') == key_n)
+    return df[mask_n]
+
 def _make_pin(name, used):
     h = int(hashlib.md5(name.encode('utf-8')).hexdigest(), 16)
     pin = str(1000 + (h % 9000))
@@ -962,8 +976,8 @@ def analisis_clientes(repre_sel, flia_sel, meses_sel=None):
     act = get_ind(df, 'Año Actual Cajas', ['Vendedor','Cliente','flia'], meses_sel)
     ant = get_ind(df, 'Año Anterior Cajas', ['Vendedor','Cliente','flia'], meses_sel)
     if repre_sel:
-        act = act[act['Vendedor'] == repre_sel]
-        ant = ant[ant['Vendedor'] == repre_sel]
+        act = _filter_vendedor(act, repre_sel)
+        ant = _filter_vendedor(ant, repre_sel)
     if flia_sel:
         act = act[act['flia'] == flia_sel]
         ant = ant[ant['flia'] == flia_sel]
@@ -1087,7 +1101,7 @@ def fig_pendientes(flia_sel=None, repre_sel=None):
         df['Pedidos Pendientes'] = pd.to_numeric(df['Pedidos Pendientes'], errors='coerce')
         df = df[df['Pedidos Pendientes'] > 0]
         if repre_sel:
-            df = df[df['Vendedor'] == repre_sel]
+            df = _filter_vendedor(df, repre_sel)
         if flia_sel:
             df = df[df['Familia Producto'] == flia_sel]
         agg = df.groupby('Vendedor')['Pedidos Pendientes'].sum().reset_index()
@@ -1501,7 +1515,7 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
             df_pend['Pedidos Pendientes'] = pd.to_numeric(df_pend['Pedidos Pendientes'], errors='coerce')
             df_pend = df_pend[df_pend['Pedidos Pendientes'] > 0]
             if repre_sel and 'Vendedor' in df_pend.columns:
-                df_pend = df_pend[df_pend['Vendedor'] == repre_sel]
+                df_pend = _filter_vendedor(df_pend, repre_sel)
             if flia_sel and 'Familia Producto' in df_pend.columns:
                 df_pend = df_pend[df_pend['Familia Producto'] == flia_sel]
             pend = df_pend['Pedidos Pendientes'].sum()
@@ -3420,7 +3434,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
         df['Pedidos Pendientes'] = pd.to_numeric(df['Pedidos Pendientes'], errors='coerce')
         df = df[df['Pedidos Pendientes'] > 0]
         if repre:
-            df = df[df['Vendedor'] == repre]
+            df = _filter_vendedor(df, repre)
         if flia:
             df = df[df['Familia Producto'] == flia]
         df = df.sort_values('Pedidos Pendientes', ascending=False)
