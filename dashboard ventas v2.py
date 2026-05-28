@@ -251,6 +251,8 @@ def _var(v, sin_ant=False, cajas=None):
         return f"{int(cajas):,} caj" if cajas is not None else '—'
     if v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v))):
         return '—'
+    if abs(v) >= VAR_CAP:
+        return f"{v:+.0f}%*"   # asterisco indica que la barra está recortada
     return f"{v:+.0f}%"
 
 def _cap_var(v, sin_ant=False):
@@ -432,7 +434,7 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             rv_tot['sin_ant'] = rv_tot['Total_b'] == 0
             rv_tot['var'] = (rv_tot['Total_a'] - rv_tot['Total_b']) / rv_tot['Total_b'].replace(0, np.nan) * 100
             rv_tot = rv_tot[rv_tot['Total_a'] > 0]  # solo reps con ventas este año
-            rv_tot = rv_tot.sort_values('var')
+            rv_tot = rv_tot.sort_values('Total_a')   # orden por volumen
             rep_df = rv_tot.rename(columns={'var': 'Total_var', 'Total_a': 'Total_vol'}).reset_index(drop=True)
         else:
             av = get_ind(df_repre, 'Año Actual Cajas', ['Vendedor','flia'])
@@ -445,7 +447,7 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             rv_tot['sin_ant'] = rv_tot['Total_b'] == 0
             rv_tot['var'] = (rv_tot['Total_a'] - rv_tot['Total_b']) / rv_tot['Total_b'].replace(0, np.nan) * 100
             rv_tot = rv_tot[rv_tot['Total_a'] > 0]
-            rv_tot = rv_tot.sort_values('var')
+            rv_tot = rv_tot.sort_values('Total_a')   # orden por volumen
             rep_df = rv_tot.rename(columns={'var': 'Total_var', 'Total_a': 'Total_vol'}).reset_index(drop=True)
 
         sin_ant_rep = rep_df['sin_ant'] if 'sin_ant' in rep_df.columns else pd.Series([False] * len(rep_df))
@@ -468,7 +470,7 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             fam_m['sin_ant']   = fam_m['Total_b'] == 0
             fam_m['Total_var'] = (fam_m['Total_a'] - fam_m['Total_b']) / fam_m['Total_b'].replace(0, np.nan) * 100
             fam_m = fam_m[fam_m['Total_a'] > 0]
-            fam_m = fam_m.sort_values('Total_var').reset_index(drop=True)
+            fam_m = fam_m.sort_values('Total_a').reset_index(drop=True)  # orden por volumen
             fam_df = fam_m.rename(columns={'Total_a': 'Total_vol'})
         else:
             fv = get_ind(df_flia, 'Var %', ['flia'])
@@ -477,7 +479,7 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             fam_df = fa[['flia','Total']].merge(fv[['flia','Total']], on='flia', how='left', suffixes=('_vol','_var'))
             fam_df['Total_var'] = fam_df['Total_var'].fillna(0) * 100
             fam_df['sin_ant']   = fam_df['Total_var'] == 0
-            fam_df = fam_df.sort_values('Total_var').reset_index(drop=True)
+            fam_df = fam_df.sort_values('Total_vol').reset_index(drop=True)  # orden por volumen
 
         sin_ant_fam = fam_df['sin_ant'] if 'sin_ant' in fam_df.columns else pd.Series([False] * len(fam_df))
         col_fam = [C['gold'] if sa else (C['green'] if (pd.notna(v) and v >= 0) else C['red'])
@@ -539,8 +541,10 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             showlegend=False,
             margin=dict(l=10, r=80, t=46, b=24),
         )
-        fig.update_xaxes(ticksuffix='%', tickfont=dict(size=10), gridcolor=C['border'],
-                         range=[-VAR_CAP * 1.3, VAR_CAP * 1.3])
+        _rx = dict(ticksuffix='%', tickfont=dict(size=10), gridcolor=C['border'],
+                   range=[-VAR_CAP * 1.3, VAR_CAP * 1.3])
+        fig.update_xaxes(**_rx, row=1, col=1)
+        fig.update_xaxes(**_rx, row=1, col=2)
         fig.update_yaxes(tickfont=dict(size=10))
         return fig
     except Exception as e:
