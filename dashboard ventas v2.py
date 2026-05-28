@@ -3019,10 +3019,10 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
     elif tab == 'clientes':
         try:
             datos = analisis_clientes(repre, flia, meses)
-            n_nuevos   = len(datos['nuevos_cli'])
-            n_crec     = len(datos['crecieron'])
-            n_caida    = len(datos['cayeron'])
-            n_perdidos = len(datos['perdidos_cli'])
+            n_nuevos   = datos['nuevos_cli']['Cliente'].nunique()
+            n_crec     = datos['crecieron']['Cliente'].nunique()
+            n_caida    = datos['cayeron']['Cliente'].nunique()
+            n_perdidos = datos['perdidos_cli']['Cliente'].nunique()
             dif_crec   = int(datos['crecieron']['dif'].sum())
             dif_caida  = int(datos['cayeron']['dif'].abs().sum())
             stats_items = [
