@@ -421,16 +421,18 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             rv_tot = rv_tot.sort_values('var')
             rep_df = rv_tot.rename(columns={'var': 'Total_var', 'Total_a': 'Total_vol'}).reset_index(drop=True)
         else:
-            rv = get_ind(df_repre, 'Var %', ['Vendedor','flia'])
             av = get_ind(df_repre, 'Año Actual Cajas', ['Vendedor','flia'])
-            rv_tot = rv.groupby('Vendedor')['Total'].mean().mul(100).reset_index()
+            bv = get_ind(df_repre, 'Año Anterior Cajas', ['Vendedor','flia'])
             av_tot = av.groupby('Vendedor')['Total'].sum().reset_index()
-            # left desde av_tot para no perder reps sin Var % (nuevos)
-            rep_df = av_tot.merge(rv_tot, on='Vendedor', how='left', suffixes=('_vol','_var'))
-            rep_df = rep_df.rename(columns={'Total_vol': 'Total_vol', 'Total_var': 'Total_var'})
-            rep_df['Total_var'] = rep_df['Total_var'].fillna(0)
-            rep_df['sin_ant'] = rep_df['Total_var'] == 0
-            rep_df = rep_df.sort_values('Total_var').reset_index(drop=True)
+            bv_tot = bv.groupby('Vendedor')['Total'].sum().reset_index()
+            rv_tot = av_tot.merge(bv_tot, on='Vendedor', how='outer', suffixes=('_a','_b'))
+            rv_tot['Total_a'] = rv_tot['Total_a'].fillna(0)
+            rv_tot['Total_b'] = rv_tot['Total_b'].fillna(0)
+            rv_tot['sin_ant'] = rv_tot['Total_b'] == 0
+            rv_tot['var'] = (rv_tot['Total_a'] - rv_tot['Total_b']) / rv_tot['Total_b'].replace(0, np.nan) * 100
+            rv_tot = rv_tot[rv_tot['Total_a'] > 0]
+            rv_tot = rv_tot.sort_values('var')
+            rep_df = rv_tot.rename(columns={'var': 'Total_var', 'Total_a': 'Total_vol'}).reset_index(drop=True)
 
         sin_ant_rep = rep_df['sin_ant'] if 'sin_ant' in rep_df.columns else pd.Series([False] * len(rep_df))
         col_rep = [C['gold'] if sa else (C['green'] if (pd.notna(v) and v >= 0) else C['red'])
@@ -995,10 +997,14 @@ def generar_analisis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=No
                 alertas.append(f"Alerta {f}: {v*100:+.0f}% vs año anterior")
             for f,v in var_f.tail(3).items():
                 oportunidades.append(f"Crecimiento {f}: {v*100:+.0f}% vs año anterior")
-            repre_var = get_ind(DFS['x repre'], 'Var %', ['Vendedor','flia'])
-            rv = repre_var.groupby('Vendedor')['Total'].mean().sort_values()
-            alertas.append(f"Representante con mayor caída: {rv.index[0]} ({rv.iloc[0]*100:+.0f}%)")
-            oportunidades.append(f"Representante con mayor crecimiento: {rv.index[-1]} ({rv.iloc[-1]*100:+.0f}%)")
+            _rv_act = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'], meses_sel).groupby('Vendedor')['Total'].sum()
+            _rv_ant = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'], meses_sel).groupby('Vendedor')['Total'].sum()
+            _rv_m = _rv_act.to_frame('a').join(_rv_ant.rename('b'), how='outer').fillna(0)
+            _rv_m['var'] = (_rv_m['a'] - _rv_m['b']) / _rv_m['b'].replace(0, np.nan) * 100
+            rv = _rv_m['var'].dropna().sort_values()
+            if len(rv) > 0:
+                alertas.append(f"Representante con mayor caída: {rv.index[0]} ({rv.iloc[0]:+.0f}%)")
+                oportunidades.append(f"Representante con mayor crecimiento: {rv.index[-1]} ({rv.iloc[-1]:+.0f}%)")
             if len(MC) >= 2:
                 u, p = MC[-1], MC[-2]
                 tu = act[u].sum(); tp = act[p].sum()
@@ -1023,10 +1029,15 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
     flags = []
     try:
         # Representantes con caída > 15%
-        rv = get_ind(DFS['x repre'], 'Var %', ['Vendedor','flia'])
+        _act_rf = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
+        _ant_rf = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'])
         if repre_sel:
-            rv = rv[rv['Vendedor'] == repre_sel]
-        rmed = rv.groupby('Vendedor')['Total'].mean() * 100
+            _act_rf = _act_rf[_act_rf['Vendedor'] == repre_sel]
+            _ant_rf = _ant_rf[_ant_rf['Vendedor'] == repre_sel]
+        _act_rf = _act_rf.groupby('Vendedor')['Total'].sum()
+        _ant_rf = _ant_rf.groupby('Vendedor')['Total'].sum()
+        _rf_m = _act_rf.to_frame('a').join(_ant_rf.rename('b'), how='outer').fillna(0)
+        rmed = (_rf_m['a'] - _rf_m['b']) / _rf_m['b'].replace(0, np.nan) * 100
         for v, pct in rmed[rmed < -15].items():
             if repre_sel:
                 flags.append(('CRITICO', f"Este representante: caída de {pct:.0f}% — requiere atención inmediata"))
