@@ -1205,90 +1205,123 @@ def generar_analisis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=No
     return insights, alertas, oportunidades, foda
 
 def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
-    """Detecta señales de alerta críticas en los datos."""
+    """Alertas estratégicas — señales no obvias con alta palanca de acción."""
     flags = []
     try:
-        # Representantes con caída > 15%
-        _act_rf = get_ind(DFS['x repre'], 'Año Actual Cajas', ['Vendedor','flia'])
-        _ant_rf = get_ind(DFS['x repre'], 'Año Anterior Cajas', ['Vendedor','flia'])
-        if repre_sel:
-            _act_rf = _act_rf[_act_rf['Vendedor'] == repre_sel]
-            _ant_rf = _ant_rf[_ant_rf['Vendedor'] == repre_sel]
-        _act_rf = _act_rf.groupby('Vendedor')['Total'].sum()
-        _ant_rf = _ant_rf.groupby('Vendedor')['Total'].sum()
-        _rf_m = _act_rf.to_frame('a').join(_ant_rf.rename('b'), how='outer').fillna(0)
-        rmed = (_rf_m['a'] - _rf_m['b']) / _rf_m['b'].replace(0, np.nan) * 100
-        for v, pct in rmed[rmed < -15].items():
-            if repre_sel:
-                flags.append(('CRITICO', f"Este representante: caída de {pct:.0f}% — requiere atención inmediata"))
-            else:
-                flags.append(('CRITICO', f"Rep. {v}: caída de {pct:.0f}% — requiere atención inmediata"))
-        for v, pct in rmed[(rmed < -5) & (rmed >= -15)].items():
-            if repre_sel:
-                flags.append(('ALERTA', f"Este representante: caída de {pct:.0f}%"))
-            else:
-                flags.append(('ALERTA', f"Rep. {v}: caída de {pct:.0f}%"))
-
-        # Familias con caída en todos los canales
-        if repre_sel and 'x repre x canal' in DFS:
-            src_canal = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor'] == repre_sel]
-            var_canal = get_ind(src_canal, 'Var %', ['flia','Canal'])
-        else:
-            var_canal = get_ind(DFS['x flia x canal'], 'Var %', ['flia','Canal'])
-        familias_check = [flia_sel] if flia_sel else FAMILIAS
-        for flia in familias_check:
-            sub = var_canal[var_canal['flia'] == flia]['Total'] * 100
-            if sub.dropna().empty:
-                continue
-            if (sub.dropna() < 0).all():
-                flags.append(('ALERTA', f"Familia {flia}: caída en todos los canales ({sub.mean():.0f}% promedio)"))
-
-        # Desaceleración mes a mes (últimos 2 meses disponibles)
-        if len(MC) >= 2:
-            if repre_sel and 'x repre' in DFS:
-                src_decel = DFS['x repre'][DFS['x repre']['Vendedor'] == repre_sel]
-                grps_decel = ['Vendedor', 'flia']
-            else:
-                src_decel = DFS['x flia']
-                grps_decel = ['flia']
-            act = get_ind(src_decel, 'Año Actual Cajas', grps_decel)
-            u, p = MC[-1], MC[-2]
-            tu = pd.to_numeric(act[u], errors='coerce').sum()
-            tp = pd.to_numeric(act[p], errors='coerce').sum()
-            if tp > 0 and (tu - tp) / tp * 100 < -10:
-                vt = (tu - tp) / tp * 100
-                label = "en tu zona" if repre_sel else "en total región"
-                flags.append(('CRITICO', f"Desaceleración fuerte: {p}→{u} = {vt:+.0f}% {label}"))
-
-        # Clientes perdidos (fueron a 0) — agregar por cliente antes de comparar
-        # para no multiplicar por cantidad de familias ni de indicadores
+        # ── Fuente clientes (sensible a todos los filtros) ────────────────────────
         if canal_sel and 'x cliente x canal' in DFS:
-            cli_src = DFS['x cliente x canal'].copy()
-            cli_src = cli_src[cli_src['Canal'] == canal_sel]
+            cli_src  = DFS['x cliente x canal'].copy()
+            cli_src  = cli_src[cli_src['Canal'] == canal_sel]
             cli_grps = ['Vendedor','Canal','Cliente','flia']
-        elif 'x cliente' in DFS:
-            cli_src = DFS['x cliente'].copy()
-            cli_grps = ['Vendedor','Cliente','flia']
         else:
-            cli_src = None
-        if cli_src is not None:
-            if repre_sel:
-                cli_src = cli_src[cli_src['Vendedor'] == repre_sel]
-            if flia_sel:
-                cli_src = cli_src[cli_src['flia'] == flia_sel]
-            act_c = get_ind(cli_src, 'Año Actual Cajas',   cli_grps, meses_sel)
-            ant_c = get_ind(cli_src, 'Año Anterior Cajas', cli_grps, meses_sel)
-            act_agg = act_c.groupby('Cliente')['Total'].sum()
-            ant_agg = ant_c.groupby('Cliente')['Total'].sum()
-            # usar misma lógica que build_kpis: suma neta > 0
-            c_act = set(act_agg[act_agg > 0].index)
-            c_ant = set(ant_agg[ant_agg > 0].index)
-            n = len(c_ant - c_act)
-            if n > 0:
-                flags.append(('ALERTA', f"{n} cliente{'s' if n>1 else ''} con 0 cajas este año (activos el año anterior)"))
+            cli_src  = DFS['x cliente'].copy()
+            cli_grps = ['Vendedor','Cliente','flia']
+        if repre_sel: cli_src = cli_src[cli_src['Vendedor'] == repre_sel]
+        if flia_sel:  cli_src = cli_src[cli_src['flia']     == flia_sel]
+        act_c = get_ind(cli_src, 'Año Actual Cajas',   cli_grps, meses_sel)
+        ant_c = get_ind(cli_src, 'Año Anterior Cajas', cli_grps, meses_sel)
+        act_vc = act_c.groupby(['Vendedor','Cliente'])['Total'].sum().reset_index()
+        ant_vc = ant_c.groupby(['Vendedor','Cliente'])['Total'].sum().reset_index()
+        act_sum = act_c.groupby('Cliente')['Total'].sum()
+        ant_sum = ant_c.groupby('Cliente')['Total'].sum()
+        c_act_all = set(act_sum[act_sum > 0].index)
+        c_ant_all = set(ant_sum[ant_sum > 0].index)
+
+        # ── Fuente representantes ─────────────────────────────────────────────────
+        if canal_sel and 'x repre x canal' in DFS:
+            src_r = DFS['x repre x canal'].copy()
+            src_r = src_r[src_r['Canal'] == canal_sel]
+        else:
+            src_r = DFS['x repre'].copy()
+        if repre_sel: src_r = src_r[src_r['Vendedor'] == repre_sel]
+        if flia_sel:  src_r = src_r[src_r['flia']     == flia_sel]
+        act_r = get_ind(src_r, 'Año Actual Cajas',   ['Vendedor','flia'], meses_sel).groupby('Vendedor')['Total'].sum()
+        ant_r = get_ind(src_r, 'Año Anterior Cajas', ['Vendedor','flia'], meses_sel).groupby('Vendedor')['Total'].sum()
+        reps  = pd.DataFrame({'act': act_r, 'ant': ant_r}).fillna(0)
+        reps  = reps[reps['act'] > 0]
+        reps['var'] = (reps['act'] - reps['ant']) / reps['ant'].replace(0, np.nan) * 100
+        tot_act_reg = reps['act'].sum()
+        tot_ant_reg = reps['ant'].sum()
+        var_region  = (tot_act_reg - tot_ant_reg) / tot_ant_reg * 100 if tot_ant_reg else 0
+
+        # ── 1. Concentración crítica — TOP 3 clientes de un rep > 60% y alguno cayó ──
+        for vendedor in reps.index:
+            v_act = act_vc[act_vc['Vendedor'] == vendedor]
+            v_ant = ant_vc[ant_vc['Vendedor'] == vendedor]
+            v_tot = v_act['Total'].sum()
+            if v_tot == 0: continue
+            top3 = v_act.nlargest(3, 'Total')
+            top3_pct = top3['Total'].sum() / v_tot * 100
+            if top3_pct < 60: continue
+            merged_t3 = top3.merge(v_ant, on='Cliente', suffixes=('_a','_b'), how='left').fillna(0)
+            declined  = merged_t3[merged_t3['Total_a'] < merged_t3['Total_b'] * 0.9]
+            if declined.empty: continue
+            worst = declined.loc[declined['Total_a'].idxmin()]
+            nivel = 'CRITICO' if top3_pct >= 75 else 'ALERTA'
+            who   = "Tu zona" if repre_sel else f"Rep. {vendedor}"
+            flags.append((nivel,
+                f"{who}: TOP 3 clientes concentran {top3_pct:.0f}% del volumen "
+                f"y {worst['Cliente'][:22]} cayó — riesgo de cartera"))
+
+        # ── 2. Rep sin clientes nuevos (cartera estancada) ───────────────────────
+        for vendedor in reps.index:
+            c_a = set(act_vc[(act_vc['Vendedor']==vendedor) & (act_vc['Total']>0)]['Cliente'])
+            c_b = set(ant_vc[(ant_vc['Vendedor']==vendedor) & (ant_vc['Total']>0)]['Cliente'])
+            if len(c_b) > 0 and len(c_a - c_b) == 0:
+                who = "Tu zona" if repre_sel else f"Rep. {vendedor}"
+                flags.append(('ALERTA', f"{who}: sin clientes nuevos este año — cartera estancada"))
+
+        # ── 3. Cartera neta negativa (inactivos > nuevos) ────────────────────────
+        n_new = len(c_act_all - c_ant_all)
+        n_ina = len(c_ant_all - c_act_all)
+        if n_ina > n_new:
+            flags.append(('ALERTA',
+                f"Cartera neta negativa: {n_ina} inactivos vs {n_new} nuevos "
+                f"— pérdida neta de {n_ina - n_new} clientes"))
+        # siempre informar total inactivos
+        if n_ina > 0:
+            flags.append(('ALERTA',
+                f"{n_ina} cliente{'s' if n_ina>1 else ''} sin compras este año "
+                f"(activos el año anterior)"))
+
+        # ── 4. Rep crece pero por debajo de la región (pierde participación relativa) ──
+        if not repre_sel and len(reps) > 1:
+            umbral = var_region - 10
+            rezagados = reps[(reps['var'] >= 0) & (reps['var'] < umbral)]
+            for v, row in rezagados.iterrows():
+                flags.append(('ALERTA',
+                    f"Rep. {v}: crece {row['var']:+.0f}% vs región {var_region:+.0f}% "
+                    f"— pierde {row['act']/tot_act_reg*100:.0f}% de participación"))
+
+        # ── 5. Familia con alto peso y caída fuerte en un canal relevante ─────────
+        if repre_sel and 'x repre x canal' in DFS:
+            src_fxc = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor'] == repre_sel].copy()
+        else:
+            src_fxc = DFS['x flia x canal'].copy()
+        if canal_sel and 'Canal' in src_fxc.columns:
+            src_fxc = src_fxc[src_fxc['Canal'] == canal_sel]
+        if flia_sel:
+            src_fxc = src_fxc[src_fxc['flia'] == flia_sel]
+        act_fxc = get_ind(src_fxc, 'Año Actual Cajas',   ['flia','Canal'], meses_sel).groupby(['flia','Canal'])['Total'].sum().reset_index()
+        ant_fxc = get_ind(src_fxc, 'Año Anterior Cajas', ['flia','Canal'], meses_sel).groupby(['flia','Canal'])['Total'].sum().reset_index()
+        fxc = act_fxc.merge(ant_fxc, on=['flia','Canal'], suffixes=('_a','_b')).fillna(0)
+        fxc['var'] = (fxc['Total_a'] - fxc['Total_b']) / fxc['Total_b'].replace(0, np.nan) * 100
+        tot_vol = fxc['Total_a'].sum()
+        if tot_vol > 0:
+            peso_flia = fxc.groupby('flia')['Total_a'].sum() / tot_vol * 100
+            for flia_n, peso in peso_flia.items():
+                if peso < 10: continue
+                flia_tot_ant = fxc[fxc['flia']==flia_n]['Total_b'].sum()
+                for _, row in fxc[fxc['flia']==flia_n].iterrows():
+                    if row['Total_b'] < flia_tot_ant * 0.15: continue  # canal marginal
+                    if pd.notna(row['var']) and row['var'] <= -30:
+                        nivel = 'CRITICO' if row['var'] <= -50 else 'ALERTA'
+                        flags.append((nivel,
+                            f"Familia {flia_n} ({peso:.0f}% del vol.): "
+                            f"caída de {row['var']:.0f}% en canal {row['Canal']}"))
 
     except Exception as e:
-        flags.append(('INFO', f'No se pudieron calcular red flags: {e}'))
+        flags.append(('INFO', f'No se pudieron calcular alertas: {e}'))
 
     if not flags:
         flags.append(('OK', 'Sin alertas críticas detectadas.'))
