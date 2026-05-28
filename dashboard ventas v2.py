@@ -556,8 +556,35 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
         m['var']     = (m['Total_a'] - m['Total_b']) / m['Total_b'].replace(0, np.nan) * 100
         m['sin_ant'] = m['Total_b'] == 0
         m['part']    = m['Total_a'] / m['Total_a'].sum() * 100
-        # Ordenar: mayor volumen arriba → invertir para que quede bien en horizontal (plotly dibuja de abajo a arriba)
         m = m.sort_values('Total_a', ascending=True)
+
+        # ── Movimiento de cartera por representante ──
+        try:
+            cli = DFS['x cliente'].copy()
+            if flia_sel:
+                cli = cli[cli['flia'] == flia_sel]
+            act_cli = get_ind(cli, 'Año Actual Cajas',   ['Vendedor','Cliente'], meses_sel)
+            ant_cli = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente'], meses_sel)
+            act_cli = act_cli[act_cli['Total'] > 0].groupby('Vendedor')['Cliente'].apply(set)
+            ant_cli = ant_cli[ant_cli['Total'] > 0].groupby('Vendedor')['Cliente'].apply(set)
+            todos_repre = set(m['Vendedor'])
+            cartera = {}
+            for v in todos_repre:
+                ca = act_cli.get(v, set())
+                cb = ant_cli.get(v, set())
+                cartera[v] = {
+                    'activos':   len(ca & cb),
+                    'nuevos':    len(ca - cb),
+                    'inactivos': len(cb - ca),
+                }
+            m['cli_act'] = m['Vendedor'].map(lambda v: cartera.get(v, {}).get('activos', 0))
+            m['cli_new'] = m['Vendedor'].map(lambda v: cartera.get(v, {}).get('nuevos', 0))
+            m['cli_ina'] = m['Vendedor'].map(lambda v: cartera.get(v, {}).get('inactivos', 0))
+            tiene_cartera = True
+        except:
+            m['cli_act'] = m['cli_new'] = m['cli_ina'] = 0
+            tiene_cartera = False
+
         nombres = m['Vendedor'].str[:22]
         n = len(m)
         altura = max(320, n * 38 + 80)
@@ -583,9 +610,9 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
         var_text    = [_var(r['var'], r['sin_ant'], r['Total_a']) for _, r in m.iterrows()]
 
         fig = make_subplots(
-            rows=1, cols=2,
-            column_widths=[0.38, 0.62],
-            subplot_titles=['Variación % vs Año Anterior', 'Cajas Año Actual'],
+            rows=1, cols=3,
+            column_widths=[0.32, 0.48, 0.20],
+            subplot_titles=['Variación % vs Año Anterior', 'Cajas Año Actual', 'Cartera de Clientes'],
             shared_yaxes=True,
         )
 
@@ -602,10 +629,9 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
             cliponaxis=False,
             hovertemplate='<b>%{y}</b><br>Var: %{text}<extra></extra>',
         ), row=1, col=1)
-        # Línea de cero
         fig.add_vline(x=0, line_width=1, line_color=C['muted'], line_dash='dot', row=1, col=1)
 
-        # ── Panel derecho: Cajas + participación ──
+        # ── Panel central: Cajas + participación ──
         fig.add_trace(go.Bar(
             y=nombres,
             x=m['Total_a'],
@@ -618,7 +644,6 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
             textfont=dict(size=10, color='#FFFFFF', family=MONO),
             hovertemplate='<b>%{y}</b><br>%{x:,.0f} cajas<extra></extra>',
         ), row=1, col=2)
-        # % participación fuera de la barra, alineado a la derecha
         fig.add_trace(go.Scatter(
             y=nombres,
             x=m['Total_a'],
@@ -630,18 +655,51 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
             hoverinfo='skip',
         ), row=1, col=2)
 
+        # ── Panel derecho: Cartera de clientes ──
+        if tiene_cartera:
+            hover_cli = [
+                f"<b>{v}</b><br>Activos: {int(a)}<br>Nuevos: +{int(n_)}<br>Inactivos: -{int(i)}"
+                for v, a, n_, i in zip(m['Vendedor'], m['cli_act'], m['cli_new'], m['cli_ina'])
+            ]
+            # Barra de activos como base visual
+            col_cli = [C['gold'] if (repre_sel and v == repre_sel) else 'rgba(201,168,76,0.35)'
+                       for v in m['Vendedor']]
+            fig.add_trace(go.Bar(
+                y=nombres,
+                x=m['cli_act'],
+                orientation='h',
+                marker_color=col_cli,
+                marker_line_width=0,
+                text=[f"{int(a)}" for a in m['cli_act']],
+                textposition='inside',
+                insidetextanchor='middle',
+                textfont=dict(size=10, color='#FFFFFF', family=MONO),
+                customdata=list(zip(m['cli_new'], m['cli_ina'])),
+                hovertemplate='<b>%{y}</b><br>Activos: %{x}<br>Nuevos: +%{customdata[0]}<br>Inactivos: -%{customdata[1]}<extra></extra>',
+            ), row=1, col=3)
+            # Indicadores +nuevos y -inactivos como texto a la derecha
+            fig.add_trace(go.Scatter(
+                y=nombres,
+                x=m['cli_act'],
+                text=[f"  <b>+{int(n_)}</b> / <b>-{int(i)}</b>"
+                      for n_, i in zip(m['cli_new'], m['cli_ina'])],
+                mode='text',
+                textposition='middle right',
+                textfont=dict(size=10, color=C['text'], family=MONO),
+                showlegend=False,
+                hoverinfo='skip',
+            ), row=1, col=3)
+
         title = f'Representantes — Ranking | {repre_sel}' if repre_sel else 'Representantes — Ranking y Variación'
         _pl = {k: v for k, v in PL.items() if k != 'margin'}
         fig.update_layout(
             **_pl, title=title, height=altura, showlegend=False,
-            margin=dict(l=10, r=60, t=46, b=20),
+            margin=dict(l=10, r=90, t=46, b=20),
         )
-        # Eje X izquierdo: rango centrado en 0
         cap = VAR_CAP * 1.25
         fig.update_xaxes(range=[-cap, cap], tickfont=dict(size=9), row=1, col=1)
-        # Eje Y: nombres de representante
         fig.update_yaxes(tickfont=dict(size=11), automargin=True)
-        # Eje X derecho: sin cero forzado, margen para el % afuera
+        fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False, row=1, col=3)
         fig.update_xaxes(tickfont=dict(size=9), row=1, col=2)
         return fig
     except Exception as e:
@@ -1304,6 +1362,24 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     # Número de familias según filtros
     n_flia = 1 if flia_sel else len(FAMILIAS)
 
+    # Movimiento de cartera de clientes
+    n_inactivos = n_nuevos = n_activos = '—'
+    try:
+        cli = DFS['x cliente'].copy()
+        if repre_sel:
+            cli = cli[cli['Vendedor'] == repre_sel]
+        if flia_sel:
+            cli = cli[cli['flia'] == flia_sel]
+        act_cli = get_ind(cli, 'Año Actual Cajas',    ['Vendedor','Cliente','flia'], meses_sel)
+        ant_cli = get_ind(cli, 'Año Anterior Cajas',  ['Vendedor','Cliente','flia'], meses_sel)
+        clientes_act = set(act_cli[act_cli['Total'] > 0]['Cliente'].unique())
+        clientes_ant = set(ant_cli[ant_cli['Total'] > 0]['Cliente'].unique())
+        n_inactivos = len(clientes_ant - clientes_act)
+        n_nuevos    = len(clientes_act - clientes_ant)
+        n_activos   = len(clientes_act & clientes_ant)
+    except:
+        pass
+
     filtro_label = " | ".join(filter(None, [
         flia_sel, repre_sel, canal_sel
     ])) or "Región completa"
@@ -1315,6 +1391,9 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
         ('REPRESENTANTES',     str(n_repre),            C['gold']),
         ('FAMILIAS',           str(n_flia),             C['gold']),
         ('PENDIENTES',         f"{int(pend):,}",        C['red'] if pend > 0 else C['muted']),
+        ('CLIENTES ACTIVOS',   str(n_activos),          C['gold']),
+        ('CLIENTES NUEVOS',    str(n_nuevos),           C['green'] if isinstance(n_nuevos, int) and n_nuevos > 0 else C['muted']),
+        ('CLIENTES INACTIVOS', str(n_inactivos),        C['red']   if isinstance(n_inactivos, int) and n_inactivos > 0 else C['muted']),
     ]
     return html.Div([
         # Filtro activo
@@ -1329,7 +1408,7 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
             ], style={'backgroundColor':C['surf'],'border':f"1px solid {C['border']}",
                       'borderRadius':'3px','padding':'14px','textAlign':'center'})
             for label, val, color in items
-        ], style={'display':'grid','gridTemplateColumns':'repeat(6,1fr)','gap':'10px'}),
+        ], style={'display':'grid','gridTemplateColumns':'repeat(9,1fr)','gap':'10px'}),
     ], style={'marginBottom':'16px'})
 
 
