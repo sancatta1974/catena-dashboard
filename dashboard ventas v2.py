@@ -1364,9 +1364,15 @@ def generar_analisis_quirurgico(flia_sel=None, repre_sel=None, canal_sel=None, m
         pivot = pivot.loc[rep_ord, flia_ord]
         result['matriz'] = pivot
         result['tot_repre'] = act_rx.groupby('Vendedor')['Total'].sum()
+        rep_agg = mx.groupby('Vendedor')[['Total_a','Total_b']].sum().reset_index()
+        rep_agg['Var%'] = (rep_agg['Total_a'] - rep_agg['Total_b']) / rep_agg['Total_b'].replace(0, np.nan) * 100
+        rep_agg['Dif']  = rep_agg['Total_a'] - rep_agg['Total_b']
+        rep_agg = rep_agg.rename(columns={'Total_a':'Actual','Total_b':'Anterior'})
+        result['representantes'] = rep_agg.sort_values('Var%')
     except Exception:
         result['matriz'] = pd.DataFrame()
         result['tot_repre'] = pd.Series(dtype=float)
+        result['representantes'] = pd.DataFrame()
 
     # 4. Fluctuación canal por representante
     try:
@@ -3134,70 +3140,93 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
                 ], style={'width':'100%','borderCollapse':'collapse'})
             ], style=CARD)
 
-        def _tabla_matriz(pivot, tot_repre):
-            if pivot is None or pivot.empty:
-                return html.Div("Sin datos para la matriz.", style={'color':C['muted'],'fontSize':'12px'})
-            flias = list(pivot.columns)
-            reps  = list(pivot.index)
-            header = html.Thead(html.Tr([
-                html.Th("Representante", style={'padding':'5px 8px','fontSize':'8px','color':C['muted'],
-                    'textTransform':'uppercase','letterSpacing':'1px',
-                    'borderBottom':f"1px solid {C['border']}",
-                    'textAlign':'left','fontWeight':'400','minWidth':'120px'}),
-                html.Th("Total", style={'padding':'5px 8px','fontSize':'8px','color':C['muted'],
-                    'textTransform':'uppercase','letterSpacing':'1px',
-                    'borderBottom':f"1px solid {C['border']}",
-                    'textAlign':'right','fontWeight':'400','whiteSpace':'nowrap'}),
-                *[html.Th(f[:13], style={'padding':'4px 5px','fontSize':'7px','color':C['muted'],
-                    'textTransform':'uppercase','letterSpacing':'0.5px',
-                    'borderBottom':f"1px solid {C['border']}",
-                    'textAlign':'center','fontWeight':'400','whiteSpace':'nowrap'}) for f in flias],
-                html.Th("Peor flia", style={'padding':'5px 8px','fontSize':'8px','color':C['red'],
-                    'textTransform':'uppercase','letterSpacing':'1px',
-                    'borderBottom':f"1px solid {C['border']}",
-                    'textAlign':'left','fontWeight':'400','whiteSpace':'nowrap'}),
-            ]))
-            rows = []
-            for rep in reps:
-                row_data = pivot.loc[rep]
-                rep_mean = row_data.dropna().mean() if not row_data.isna().all() else np.nan
-                bg_mean, txt_mean = _var_color(rep_mean)
-                tot = tot_repre.get(rep, 0) if tot_repre is not None else 0
-                valid = row_data.dropna()
-                worst_flia = valid.idxmin() if not valid.empty else None
-                worst_val  = valid.min()    if not valid.empty else np.nan
-                cells = []
-                for flia in flias:
-                    v = row_data.get(flia, np.nan)
-                    bg_c, txt_c = _var_color(v)
-                    cells.append(html.Td(_vt(v), style={
-                        'padding':'5px 5px','fontSize':'10px','textAlign':'center',
-                        'backgroundColor':bg_c,'color':txt_c,'fontFamily':MONO,
-                        'fontWeight':'600','borderRight':'1px solid #111',
-                        'borderBottom':'1px solid #111','whiteSpace':'nowrap',
-                    }))
-                rows.append(html.Tr([
-                    html.Td([
-                        html.Div(rep[:22], style={'fontSize':'10px','fontWeight':'600'}),
-                        html.Div(_vt(rep_mean), style={'fontSize':'8px','color':txt_mean,
-                            'fontFamily':MONO,'marginTop':'2px',
-                            'backgroundColor':bg_mean,'padding':'1px 4px',
-                            'borderRadius':'2px','display':'inline-block'}),
-                    ], style={'padding':'5px 8px','borderBottom':'1px solid #111','verticalAlign':'top'}),
-                    html.Td(f"{int(tot):,}" if not pd.isna(tot) else '—',
-                        style={'padding':'5px 8px','fontSize':'10px','textAlign':'right',
-                            'color':C['gold'],'fontFamily':MONO,'fontWeight':'700',
-                            'borderBottom':'1px solid #111','whiteSpace':'nowrap'}),
-                    *cells,
-                    html.Td([
-                        html.Div(str(worst_flia)[:14] if worst_flia else '—',
-                            style={'fontSize':'9px','color':C['red']}),
-                        html.Div(_vt(worst_val),
-                            style={'fontSize':'8px','color':C['red'],'fontFamily':MONO}),
-                    ], style={'padding':'5px 8px','borderBottom':'1px solid #111','verticalAlign':'top'}),
+        def _ranking_fig(df, col_name, title):
+            if df is None or df.empty:
+                fig = go.Figure()
+                fig.update_layout(paper_bgcolor=C['card'], plot_bgcolor=C['card'],
+                    font_color=C['muted'], height=260, margin=dict(l=10,r=10,t=40,b=10))
+                fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=12, color=C['muted']), xref='paper', yref='paper')
+                return fig
+            df = df.sort_values('Var%').reset_index(drop=True)
+            bar_colors = [C['red'] if v < 0 else C['green'] for v in df['Var%']]
+            bar_texts  = [f"{'+'if v>=0 else ''}{v:.0f}%  {int(a):,}" for v, a in zip(df['Var%'], df['Actual'])]
+            text_pos   = ['outside' if v >= 0 else 'outside' for v in df['Var%']]
+            fig = go.Figure(go.Bar(
+                x=df['Var%'], y=df[col_name], orientation='h',
+                marker_color=bar_colors, text=bar_texts,
+                textposition='outside', textfont=dict(size=10, color=C['text'], family=MONO),
+                cliponaxis=False, hovertemplate='%{y}: %{x:+.0f}%<extra></extra>',
+            ))
+            x_max = max(abs(df['Var%'].max()), abs(df['Var%'].min()), 10) * 1.6
+            fig.update_layout(
+                title=dict(text=title, font=dict(size=10, color=C['muted']), x=0, pad=dict(l=0)),
+                paper_bgcolor=C['card'], plot_bgcolor=C['card'],
+                font=dict(color=C['text'], family='Arial'),
+                xaxis=dict(range=[-x_max, x_max], showgrid=True, gridcolor=C['border'],
+                    zeroline=True, zerolinecolor=C['border'], zerolinewidth=1,
+                    tickfont=dict(size=8, color=C['muted']), showticklabels=False),
+                yaxis=dict(showgrid=False, tickfont=dict(size=10), automargin=True),
+                margin=dict(l=10, r=80, t=30, b=10),
+                height=max(200, 36 * len(df) + 60),
+                bargap=0.4,
+            )
+            return fig
+
+        def _tabla_flia_peso(df_flia):
+            if df_flia is None or df_flia.empty:
+                return html.Div("Sin datos", style={'color':C['muted'],'fontSize':'12px'})
+            tot_act = df_flia['Actual'].sum()
+            df_flia = df_flia.copy()
+            df_flia['Peso%'] = df_flia['Actual'] / tot_act * 100 if tot_act else 0
+            df_flia = df_flia.sort_values('Peso%', ascending=False).reset_index(drop=True)
+            filas = []
+            for _, row in df_flia.iterrows():
+                v = row['Var%']
+                bg_c, txt_c = _var_color(v)
+                dif = row.get('Dif', row['Actual'] - row['Anterior'])
+                filas.append(html.Tr([
+                    html.Td(str(row['Familia'])[:22], style={'padding':'5px 8px','fontSize':'11px',
+                        'borderBottom':f"1px solid {C['border']}"}),
+                    html.Td(f"{row['Peso%']:.1f}%", style={'padding':'5px 8px','fontSize':'11px',
+                        'textAlign':'right','color':C['gold'],'fontFamily':MONO,
+                        'borderBottom':f"1px solid {C['border']}"}),
+                    html.Td(_vt(v), style={'padding':'5px 8px','fontSize':'11px','textAlign':'right',
+                        'backgroundColor':bg_c,'color':txt_c,'fontWeight':'700',
+                        'fontFamily':MONO,'borderBottom':f"1px solid {C['border']}"}),
+                    html.Td(f"{int(row['Actual']):,}", style={'padding':'5px 8px','fontSize':'11px',
+                        'textAlign':'right','fontFamily':MONO,
+                        'borderBottom':f"1px solid {C['border']}"}),
+                    html.Td(f"{int(dif):+,}", style={'padding':'5px 8px','fontSize':'11px',
+                        'textAlign':'right','fontFamily':MONO,
+                        'color': C['green'] if dif >= 0 else C['red'],
+                        'fontWeight':'700','borderBottom':f"1px solid {C['border']}"}),
                 ]))
-            return html.Table([header, html.Tbody(rows)],
-                style={'width':'100%','borderCollapse':'collapse'})
+            tot_v = (tot_act - df_flia['Anterior'].sum()) / df_flia['Anterior'].sum() * 100 if df_flia['Anterior'].sum() else 0
+            bg_t, txt_t = _var_color(tot_v)
+            filas.append(html.Tr([
+                html.Td("TOTAL", style={'padding':'6px 8px','fontSize':'8px','letterSpacing':'2px',
+                    'color':C['muted'],'textTransform':'uppercase','fontWeight':'700',
+                    'borderTop':f"1px solid {C['border']}"}),
+                html.Td("100%", style={'padding':'6px 8px','fontSize':'11px','textAlign':'right',
+                    'color':C['gold'],'fontFamily':MONO,'borderTop':f"1px solid {C['border']}"}),
+                html.Td(_vt(tot_v), style={'padding':'6px 8px','fontSize':'11px','textAlign':'right',
+                    'backgroundColor':bg_t,'color':txt_t,'fontWeight':'700',
+                    'fontFamily':MONO,'borderTop':f"1px solid {C['border']}"}),
+                html.Td(f"{int(tot_act):,}", style={'padding':'6px 8px','fontSize':'11px',
+                    'textAlign':'right','fontFamily':MONO,'fontWeight':'700',
+                    'borderTop':f"1px solid {C['border']}"}),
+                html.Td(f"{int(tot_act - df_flia['Anterior'].sum()):+,}", style={
+                    'padding':'6px 8px','fontSize':'11px','textAlign':'right','fontFamily':MONO,
+                    'color': C['green'] if tot_act >= df_flia['Anterior'].sum() else C['red'],
+                    'fontWeight':'700','borderTop':f"1px solid {C['border']}"}),
+            ], style={'borderTop':f"2px solid {C['border']}"}))
+            return html.Table([
+                html.Thead(html.Tr([
+                    _th('Familia','left'), _th('Peso %'), _th('Var %'), _th('Cajas Act.'), _th('Δ Cajas')
+                ])),
+                html.Tbody(filas)
+            ], style={'width':'100%','borderCollapse':'collapse'})
 
         def _sec_canal_repre(df):
             if df is None or df.empty:
@@ -3281,18 +3310,23 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
         ], style={**CARD, 'borderColor': C['red']})
 
         sec_region = html.Div([
-            _tabla_diag(aq.get('familias', _df_empty), 'Familia', 'Familias — Variación YTD'),
-            _tabla_diag(aq.get('canales',  _df_empty), 'Canal',   'Canales — Variación YTD'),
+            _tabla_diag(aq.get('canales', _df_empty), 'Canal', 'Canales — Variación YTD'),
+            html.Div([
+                html.Div("Familias — Peso en Volumen y Variación", style=SEC),
+                _tabla_flia_peso(aq.get('familias', _df_empty)),
+            ], style=CARD),
         ], style=G2)
 
-        _pivot  = aq.get('matriz',     _df_empty)
-        _tot_r  = aq.get('tot_repre',  pd.Series(dtype=float))
-        sec_matriz = html.Div([
-            html.Div("Mapa de Tendencias — Representante × Familia", style=SEC),
-            html.Div("Variación % vs año anterior. Orden: de mayor caída a mayor crecimiento — familias (columnas) y representantes (filas).",
-                style={'color':C['muted'],'fontSize':'10px','marginBottom':'10px'}),
-            html.Div(_tabla_matriz(_pivot, _tot_r), style={'overflowX':'auto'}),
-        ], style=CARD)
+        _rep_df  = aq.get('representantes', _df_empty)
+        _flia_df = aq.get('familias',       _df_empty)
+        sec_rankings = html.Div([
+            html.Div([dcc.Graph(
+                figure=_ranking_fig(_rep_df, 'Vendedor', 'REPRESENTANTES — Ranking por Variación'),
+                config={'displayModeBar':False})], style=CARD),
+            html.Div([dcc.Graph(
+                figure=_ranking_fig(_flia_df, 'Familia', 'FAMILIAS — Ranking por Variación'),
+                config={'displayModeBar':False})], style=CARD),
+        ], style=G2)
 
         _cr = aq.get('canal_repre', _df_empty)
         sec_canales_rep = html.Div([
@@ -3303,7 +3337,7 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
         ], style=CARD)
 
         _tend_el = _sec_tendencia(aq.get('tendencia', _df_empty))
-        _children = [_pbt, sec_flags, sec_region, sec_matriz, sec_canales_rep]
+        _children = [_pbt, sec_flags, sec_rankings, sec_region, sec_canales_rep]
         if _tend_el:
             _children.append(_tend_el)
 
