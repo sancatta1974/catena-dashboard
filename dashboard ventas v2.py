@@ -3143,92 +3143,111 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
             ], style=CARD)
 
         def _ranking_fig(df, col_name, title):
-            if df is None or df.empty:
-                fig = go.Figure()
-                fig.update_layout(paper_bgcolor=C['card'], plot_bgcolor=C['card'],
-                    font_color=C['muted'], height=260, margin=dict(l=10,r=10,t=40,b=10))
-                fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False,
-                    font=dict(size=12, color=C['muted']), xref='paper', yref='paper')
+            _empty_fig = go.Figure()
+            _empty_fig.update_layout(paper_bgcolor=C['card'], plot_bgcolor=C['card'],
+                font_color=C['muted'], height=260, margin=dict(l=10,r=10,t=40,b=10))
+            _empty_fig.add_annotation(text="Sin datos", x=0.5, y=0.5, showarrow=False,
+                font=dict(size=12, color=C['muted']), xref='paper', yref='paper')
+            try:
+                if df is None or df.empty:
+                    return _empty_fig
+                df = df.copy()
+                df['Var%'] = pd.to_numeric(df['Var%'], errors='coerce')
+                df['Actual'] = pd.to_numeric(df['Actual'], errors='coerce').fillna(0)
+                df = df.sort_values('Var%', na_position='last').reset_index(drop=True)
+                def _safe_vv(v):
+                    if pd.isna(v): return '—'
+                    return f"{'+'if v>=0 else ''}{v:.0f}%"
+                bar_colors = [C['red'] if (pd.notna(v) and v < 0) else C['green'] for v in df['Var%']]
+                bar_texts  = [f"{_safe_vv(v)}  {int(a):,}" for v, a in zip(df['Var%'], df['Actual'])]
+                vv = df['Var%'].dropna()
+                x_max = (max(abs(vv.max()), abs(vv.min())) if not vv.empty else 10) * 1.6
+                x_max = max(x_max, 10)
+                fig = go.Figure(go.Bar(
+                    x=df['Var%'].fillna(0), y=df[col_name], orientation='h',
+                    marker_color=bar_colors, text=bar_texts,
+                    textposition='outside', textfont=dict(size=10, color=C['text'], family=MONO),
+                    cliponaxis=False, hovertemplate='%{y}: %{x:+.0f}%<extra></extra>',
+                ))
+                fig.update_layout(
+                    title=dict(text=title, font=dict(size=10, color=C['muted']), x=0, pad=dict(l=0)),
+                    paper_bgcolor=C['card'], plot_bgcolor=C['card'],
+                    font=dict(color=C['text'], family='Arial'),
+                    xaxis=dict(range=[-x_max, x_max], showgrid=True, gridcolor=C['border'],
+                        zeroline=True, zerolinecolor=C['border'], zerolinewidth=1,
+                        tickfont=dict(size=8, color=C['muted']), showticklabels=False),
+                    yaxis=dict(showgrid=False, tickfont=dict(size=10), automargin=True),
+                    margin=dict(l=10, r=80, t=30, b=10),
+                    height=max(200, 36 * len(df) + 60),
+                    bargap=0.4,
+                )
                 return fig
-            df = df.sort_values('Var%').reset_index(drop=True)
-            bar_colors = [C['red'] if v < 0 else C['green'] for v in df['Var%']]
-            bar_texts  = [f"{'+'if v>=0 else ''}{v:.0f}%  {int(a):,}" for v, a in zip(df['Var%'], df['Actual'])]
-            text_pos   = ['outside' if v >= 0 else 'outside' for v in df['Var%']]
-            fig = go.Figure(go.Bar(
-                x=df['Var%'], y=df[col_name], orientation='h',
-                marker_color=bar_colors, text=bar_texts,
-                textposition='outside', textfont=dict(size=10, color=C['text'], family=MONO),
-                cliponaxis=False, hovertemplate='%{y}: %{x:+.0f}%<extra></extra>',
-            ))
-            x_max = max(abs(df['Var%'].max()), abs(df['Var%'].min()), 10) * 1.6
-            fig.update_layout(
-                title=dict(text=title, font=dict(size=10, color=C['muted']), x=0, pad=dict(l=0)),
-                paper_bgcolor=C['card'], plot_bgcolor=C['card'],
-                font=dict(color=C['text'], family='Arial'),
-                xaxis=dict(range=[-x_max, x_max], showgrid=True, gridcolor=C['border'],
-                    zeroline=True, zerolinecolor=C['border'], zerolinewidth=1,
-                    tickfont=dict(size=8, color=C['muted']), showticklabels=False),
-                yaxis=dict(showgrid=False, tickfont=dict(size=10), automargin=True),
-                margin=dict(l=10, r=80, t=30, b=10),
-                height=max(200, 36 * len(df) + 60),
-                bargap=0.4,
-            )
-            return fig
+            except Exception:
+                return _empty_fig
 
         def _tabla_flia_peso(df_flia):
-            if df_flia is None or df_flia.empty:
-                return html.Div("Sin datos", style={'color':C['muted'],'fontSize':'12px'})
-            tot_act = df_flia['Actual'].sum()
-            df_flia = df_flia.copy()
-            df_flia['Peso%'] = df_flia['Actual'] / tot_act * 100 if tot_act else 0
-            df_flia = df_flia.sort_values('Peso%', ascending=False).reset_index(drop=True)
-            filas = []
-            for _, row in df_flia.iterrows():
-                v = row['Var%']
-                bg_c, txt_c = _var_color(v)
-                dif = row.get('Dif', row['Actual'] - row['Anterior'])
+            try:
+                if df_flia is None or df_flia.empty:
+                    return html.Div("Sin datos", style={'color':C['muted'],'fontSize':'12px'})
+                df_flia = df_flia.copy()
+                df_flia['Actual']   = pd.to_numeric(df_flia['Actual'],   errors='coerce').fillna(0)
+                df_flia['Anterior'] = pd.to_numeric(df_flia['Anterior'], errors='coerce').fillna(0)
+                df_flia['Var%']     = pd.to_numeric(df_flia['Var%'],     errors='coerce')
+                df_flia['Dif']      = df_flia['Actual'] - df_flia['Anterior']
+                tot_act = df_flia['Actual'].sum()
+                df_flia['Peso%'] = df_flia['Actual'] / tot_act * 100 if tot_act else 0.0
+                df_flia = df_flia.sort_values('Peso%', ascending=False).reset_index(drop=True)
+                filas = []
+                for _, row in df_flia.iterrows():
+                    v   = row['Var%']
+                    dif = row['Dif']
+                    bg_c, txt_c = _var_color(v)
+                    filas.append(html.Tr([
+                        html.Td(str(row['Familia'])[:22], style={'padding':'5px 8px','fontSize':'11px',
+                            'borderBottom':f"1px solid {C['border']}"}),
+                        html.Td(f"{row['Peso%']:.1f}%", style={'padding':'5px 8px','fontSize':'11px',
+                            'textAlign':'right','color':C['gold'],'fontFamily':MONO,
+                            'borderBottom':f"1px solid {C['border']}"}),
+                        html.Td(_vt(v), style={'padding':'5px 8px','fontSize':'11px','textAlign':'right',
+                            'backgroundColor':bg_c,'color':txt_c,'fontWeight':'700',
+                            'fontFamily':MONO,'borderBottom':f"1px solid {C['border']}"}),
+                        html.Td(f"{int(row['Actual']):,}", style={'padding':'5px 8px','fontSize':'11px',
+                            'textAlign':'right','fontFamily':MONO,
+                            'borderBottom':f"1px solid {C['border']}"}),
+                        html.Td(f"{int(dif):+,}", style={'padding':'5px 8px','fontSize':'11px',
+                            'textAlign':'right','fontFamily':MONO,
+                            'color': C['green'] if dif >= 0 else C['red'],
+                            'fontWeight':'700','borderBottom':f"1px solid {C['border']}"}),
+                    ]))
+                tot_ant = df_flia['Anterior'].sum()
+                tot_v   = (tot_act - tot_ant) / tot_ant * 100 if tot_ant else 0
+                tot_dif = tot_act - tot_ant
+                bg_t, txt_t = _var_color(tot_v)
                 filas.append(html.Tr([
-                    html.Td(str(row['Familia'])[:22], style={'padding':'5px 8px','fontSize':'11px',
-                        'borderBottom':f"1px solid {C['border']}"}),
-                    html.Td(f"{row['Peso%']:.1f}%", style={'padding':'5px 8px','fontSize':'11px',
-                        'textAlign':'right','color':C['gold'],'fontFamily':MONO,
-                        'borderBottom':f"1px solid {C['border']}"}),
-                    html.Td(_vt(v), style={'padding':'5px 8px','fontSize':'11px','textAlign':'right',
-                        'backgroundColor':bg_c,'color':txt_c,'fontWeight':'700',
-                        'fontFamily':MONO,'borderBottom':f"1px solid {C['border']}"}),
-                    html.Td(f"{int(row['Actual']):,}", style={'padding':'5px 8px','fontSize':'11px',
-                        'textAlign':'right','fontFamily':MONO,
-                        'borderBottom':f"1px solid {C['border']}"}),
-                    html.Td(f"{int(dif):+,}", style={'padding':'5px 8px','fontSize':'11px',
-                        'textAlign':'right','fontFamily':MONO,
-                        'color': C['green'] if dif >= 0 else C['red'],
-                        'fontWeight':'700','borderBottom':f"1px solid {C['border']}"}),
-                ]))
-            tot_v = (tot_act - df_flia['Anterior'].sum()) / df_flia['Anterior'].sum() * 100 if df_flia['Anterior'].sum() else 0
-            bg_t, txt_t = _var_color(tot_v)
-            filas.append(html.Tr([
-                html.Td("TOTAL", style={'padding':'6px 8px','fontSize':'8px','letterSpacing':'2px',
-                    'color':C['muted'],'textTransform':'uppercase','fontWeight':'700',
-                    'borderTop':f"1px solid {C['border']}"}),
-                html.Td("100%", style={'padding':'6px 8px','fontSize':'11px','textAlign':'right',
-                    'color':C['gold'],'fontFamily':MONO,'borderTop':f"1px solid {C['border']}"}),
-                html.Td(_vt(tot_v), style={'padding':'6px 8px','fontSize':'11px','textAlign':'right',
-                    'backgroundColor':bg_t,'color':txt_t,'fontWeight':'700',
-                    'fontFamily':MONO,'borderTop':f"1px solid {C['border']}"}),
-                html.Td(f"{int(tot_act):,}", style={'padding':'6px 8px','fontSize':'11px',
-                    'textAlign':'right','fontFamily':MONO,'fontWeight':'700',
-                    'borderTop':f"1px solid {C['border']}"}),
-                html.Td(f"{int(tot_act - df_flia['Anterior'].sum()):+,}", style={
-                    'padding':'6px 8px','fontSize':'11px','textAlign':'right','fontFamily':MONO,
-                    'color': C['green'] if tot_act >= df_flia['Anterior'].sum() else C['red'],
-                    'fontWeight':'700','borderTop':f"1px solid {C['border']}"}),
-            ], style={'borderTop':f"2px solid {C['border']}"}))
-            return html.Table([
-                html.Thead(html.Tr([
-                    _th('Familia','left'), _th('Peso %'), _th('Var %'), _th('Cajas Act.'), _th('Δ Cajas')
-                ])),
-                html.Tbody(filas)
-            ], style={'width':'100%','borderCollapse':'collapse'})
+                    html.Td("TOTAL", style={'padding':'6px 8px','fontSize':'8px','letterSpacing':'2px',
+                        'color':C['muted'],'textTransform':'uppercase','fontWeight':'700',
+                        'borderTop':f"1px solid {C['border']}"}),
+                    html.Td("100%", style={'padding':'6px 8px','fontSize':'11px','textAlign':'right',
+                        'color':C['gold'],'fontFamily':MONO,'borderTop':f"1px solid {C['border']}"}),
+                    html.Td(_vt(tot_v), style={'padding':'6px 8px','fontSize':'11px','textAlign':'right',
+                        'backgroundColor':bg_t,'color':txt_t,'fontWeight':'700',
+                        'fontFamily':MONO,'borderTop':f"1px solid {C['border']}"}),
+                    html.Td(f"{int(tot_act):,}", style={'padding':'6px 8px','fontSize':'11px',
+                        'textAlign':'right','fontFamily':MONO,'fontWeight':'700',
+                        'borderTop':f"1px solid {C['border']}"}),
+                    html.Td(f"{int(tot_dif):+,}", style={
+                        'padding':'6px 8px','fontSize':'11px','textAlign':'right','fontFamily':MONO,
+                        'color': C['green'] if tot_dif >= 0 else C['red'],
+                        'fontWeight':'700','borderTop':f"1px solid {C['border']}"}),
+                ], style={'borderTop':f"2px solid {C['border']}"}))
+                return html.Table([
+                    html.Thead(html.Tr([
+                        _th('Familia','left'), _th('Peso %'), _th('Var %'), _th('Cajas Act.'), _th('Δ Cajas')
+                    ])),
+                    html.Tbody(filas)
+                ], style={'width':'100%','borderCollapse':'collapse'})
+            except Exception as e:
+                return html.Div(f"Error tabla familias: {e}", style={'color':C['red'],'fontSize':'11px'})
 
         def _sec_canal_repre(df):
             if df is None or df.empty:
@@ -3319,16 +3338,19 @@ def cb_content(tab, _ver, flia, repre, canal, meses, auth):
             ], style=CARD),
         ], style=G2)
 
-        _rep_df  = aq.get('representantes', _df_empty)
-        _flia_df = aq.get('familias',       _df_empty)
-        sec_rankings = html.Div([
-            html.Div([dcc.Graph(
-                figure=_ranking_fig(_rep_df, 'Vendedor', 'REPRESENTANTES — Ranking por Variación'),
-                config={'displayModeBar':False})], style=CARD),
-            html.Div([dcc.Graph(
-                figure=_ranking_fig(_flia_df, 'Familia', 'FAMILIAS — Ranking por Variación'),
-                config={'displayModeBar':False})], style=CARD),
-        ], style=G2)
+        try:
+            _rep_df  = aq.get('representantes', _df_empty)
+            _flia_df = aq.get('familias',       _df_empty)
+            sec_rankings = html.Div([
+                html.Div([dcc.Graph(
+                    figure=_ranking_fig(_rep_df, 'Vendedor', 'REPRESENTANTES — Ranking por Variación'),
+                    config={'displayModeBar':False})], style=CARD),
+                html.Div([dcc.Graph(
+                    figure=_ranking_fig(_flia_df, 'Familia', 'FAMILIAS — Ranking por Variación'),
+                    config={'displayModeBar':False})], style=CARD),
+            ], style=G2)
+        except Exception as _e_rank:
+            sec_rankings = html.Div(f"Error rankings: {_e_rank}", style={**CARD,'color':C['red']})
 
         _cr = aq.get('canal_repre', _df_empty)
         sec_canales_rep = html.Div([
