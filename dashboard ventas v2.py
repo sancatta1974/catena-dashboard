@@ -558,13 +558,19 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
         m['part']    = m['Total_a'] / m['Total_a'].sum() * 100
         m = m.sort_values('Total_a', ascending=True)
 
-        # ── Movimiento de cartera por representante ──
+        # ── Movimiento de cartera por representante — sensible a todos los filtros ──
         try:
-            cli = DFS['x cliente'].copy()
+            if canal_sel and 'x cliente x canal' in DFS:
+                cli = DFS['x cliente x canal'].copy()
+                cli = cli[cli['Canal'] == canal_sel]
+                grps_cli = ['Vendedor','Canal','Cliente']
+            else:
+                cli = DFS['x cliente'].copy()
+                grps_cli = ['Vendedor','Cliente']
             if flia_sel:
                 cli = cli[cli['flia'] == flia_sel]
-            act_cli = get_ind(cli, 'Año Actual Cajas',   ['Vendedor','Cliente'], meses_sel)
-            ant_cli = get_ind(cli, 'Año Anterior Cajas', ['Vendedor','Cliente'], meses_sel)
+            act_cli = get_ind(cli, 'Año Actual Cajas',   grps_cli, meses_sel)
+            ant_cli = get_ind(cli, 'Año Anterior Cajas', grps_cli, meses_sel)
             act_cli = act_cli[act_cli['Total'] > 0].groupby('Vendedor')['Cliente'].apply(set)
             ant_cli = ant_cli[ant_cli['Total'] > 0].groupby('Vendedor')['Cliente'].apply(set)
             todos_repre = set(m['Vendedor'])
@@ -1362,16 +1368,22 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     # Número de familias según filtros
     n_flia = 1 if flia_sel else len(FAMILIAS)
 
-    # Movimiento de cartera de clientes
+    # Movimiento de cartera de clientes — sensible a todos los filtros
     n_inactivos = n_nuevos = n_activos = '—'
     try:
-        cli = DFS['x cliente'].copy()
+        if canal_sel and 'x cliente x canal' in DFS:
+            cli = DFS['x cliente x canal'].copy()
+            cli = cli[cli['Canal'] == canal_sel]
+            grps = ['Vendedor','Canal','Cliente','flia']
+        else:
+            cli = DFS['x cliente'].copy()
+            grps = ['Vendedor','Cliente','flia']
         if repre_sel:
             cli = cli[cli['Vendedor'] == repre_sel]
         if flia_sel:
             cli = cli[cli['flia'] == flia_sel]
-        act_cli = get_ind(cli, 'Año Actual Cajas',    ['Vendedor','Cliente','flia'], meses_sel)
-        ant_cli = get_ind(cli, 'Año Anterior Cajas',  ['Vendedor','Cliente','flia'], meses_sel)
+        act_cli = get_ind(cli, 'Año Actual Cajas',   grps, meses_sel)
+        ant_cli = get_ind(cli, 'Año Anterior Cajas', grps, meses_sel)
         clientes_act = set(act_cli[act_cli['Total'] > 0]['Cliente'].unique())
         clientes_ant = set(ant_cli[ant_cli['Total'] > 0]['Cliente'].unique())
         n_inactivos = len(clientes_ant - clientes_act)
