@@ -579,7 +579,7 @@ def fig_repre_ranking(flia_sel, canal_sel, repre_sel=None, meses_sel=None, solo=
                 ca = act_cli.get(v, set())
                 cb = ant_cli.get(v, set())
                 cartera[v] = {
-                    'activos':   len(ca & cb),
+                    'activos':   len(ca),          # total que compró este año (incluye nuevos)
                     'nuevos':    len(ca - cb),
                     'inactivos': len(cb - ca),
                 }
@@ -1502,7 +1502,7 @@ def build_kpis(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
         clientes_ant = set(ant_cli[ant_cli['Total'] > 0]['Cliente'].unique())
         n_inactivos = len(clientes_ant - clientes_act)
         n_nuevos    = len(clientes_act - clientes_ant)
-        n_activos   = len(clientes_act & clientes_ant)
+        n_activos   = len(clientes_act)          # total que compró este año (incluye nuevos)
     except:
         pass
 
