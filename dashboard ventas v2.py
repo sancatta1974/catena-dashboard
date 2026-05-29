@@ -574,41 +574,39 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
         col_rep = [C['gold'] if sa else (C['green'] if (pd.notna(v) and v >= 0) else C['red'])
                    for v, sa in zip(rep_df['Total_var'], sin_ant_rep)]
 
-        # ── Familias ──
+        # ── Canales (participación %) ──
+        if repre_sel:
+            df_can = DFS['x repre x canal'][DFS['x repre x canal']['Vendedor'] == repre_sel]
+        else:
+            df_can = DFS['x flia x canal']
         if canal_sel:
-            df_flia = DFS['x flia x canal'][DFS['x flia x canal']['Canal'] == canal_sel]
-        else:
-            df_flia = DFS['x flia']
+            df_can = df_can[df_can['Canal'] == canal_sel]
         if flia_sel:
-            df_flia = df_flia[df_flia['flia'] == flia_sel]
-        if meses_sel:
-            fa_act = get_ind(df_flia, 'Año Actual Cajas', ['flia'], meses_sel)
-            fa_ant = get_ind(df_flia, 'Año Anterior Cajas', ['flia'], meses_sel)
-            fam_m = fa_act.merge(fa_ant, on='flia', how='outer', suffixes=('_a','_b'))
-            fam_m['Total_a'] = fam_m['Total_a'].fillna(0)
-            fam_m['Total_b'] = fam_m['Total_b'].fillna(0)
-            fam_m['sin_ant']   = fam_m['Total_b'] == 0
-            fam_m['Total_var'] = (fam_m['Total_a'] - fam_m['Total_b']) / fam_m['Total_b'].replace(0, np.nan) * 100
-            fam_m = fam_m[fam_m['Total_a'] > 0]
-            fam_m = fam_m.sort_values('Total_a').reset_index(drop=True)  # orden por volumen
-            fam_df = fam_m.rename(columns={'Total_a': 'Total_vol'})
-        else:
-            fv = get_ind(df_flia, 'Var %', ['flia'])
-            fa = get_ind(df_flia, 'Año Actual Cajas', ['flia'])
-            # left desde fa para no perder familias sin Var % (nuevas)
-            fam_df = fa[['flia','Total']].merge(fv[['flia','Total']], on='flia', how='left', suffixes=('_vol','_var'))
-            fam_df['Total_var'] = fam_df['Total_var'].fillna(0) * 100
-            fam_df['sin_ant']   = fam_df['Total_var'] == 0
-            fam_df = fam_df.sort_values('Total_vol').reset_index(drop=True)  # orden por volumen
+            df_can = df_can[df_can['flia'] == flia_sel]
+        can_a = get_ind(df_can, 'Año Actual Cajas', ['Canal','flia'], meses_sel)
+        can_b = get_ind(df_can, 'Año Anterior Cajas', ['Canal','flia'], meses_sel)
+        ca = can_a.groupby('Canal')['Total'].sum().reset_index()
+        cb = can_b.groupby('Canal')['Total'].sum().reset_index()
+        can_df = ca.merge(cb, on='Canal', how='outer', suffixes=('_a','_b'))
+        can_df['Total_a'] = can_df['Total_a'].fillna(0)
+        can_df['Total_b'] = can_df['Total_b'].fillna(0)
+        can_df = can_df[can_df['Total_a'] > 0]
+        can_df = can_df[~can_df['Canal'].str.upper().str.strip().isin(['TRAVEL RETAIL'])]
+        tot_can_a = can_df['Total_a'].sum()
+        tot_can_b = can_df['Total_b'].sum()
+        can_df['pct']      = can_df['Total_a'] / tot_can_a * 100 if tot_can_a else 0
+        can_df['pct_ant']  = (can_df['Total_b'] / tot_can_b * 100).fillna(0) if tot_can_b else 0
+        can_df['delta_pp'] = can_df['pct'] - can_df['pct_ant']
+        can_df = can_df.sort_values('Total_a', ascending=True).reset_index(drop=True)
 
-        sin_ant_fam = fam_df['sin_ant'] if 'sin_ant' in fam_df.columns else pd.Series([False] * len(fam_df))
-        col_fam = [C['gold'] if sa else (C['green'] if (pd.notna(v) and v >= 0) else C['red'])
-                   for v, sa in zip(fam_df['Total_var'], sin_ant_fam)]
+        _canal_palette = ['#4E79A7','#F28E2B','#E15759','#76B7B2','#59A14F',
+                          '#EDC948','#B07AA1','#FF9DA7','#9C755F','#BAB0AC']
+        col_can = [_canal_palette[i % len(_canal_palette)] for i in range(len(can_df))]
 
         fig = make_subplots(
             rows=1, cols=2,
             subplot_titles=['Representantes — Var % vs Año Anterior',
-                            'Familias — Var % vs Año Anterior'],
+                            'Participación por Canal'],
             column_widths=[0.55, 0.45],
         )
 
@@ -629,34 +627,32 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
             hovertemplate='<b>%{y}</b><br>Cajas: %{customdata:,.0f}<extra></extra>',
         ), row=1, col=1)
 
-        # Panel der — familias
-        fam_vol_list = list(fam_df['Total_vol'])
-        fam_tpos = ['inside' if sa else 'outside' for sa in sin_ant_fam]
-        fam_tcol = ['#FFFFFF' if sa else C['text'] for sa in sin_ant_fam]
+        # Panel der — participación por canal
         fig.add_trace(go.Bar(
-            y=fam_df['flia'].str[:18],
-            x=[_cap_var(v, sa) for v, sa in zip(fam_df['Total_var'], sin_ant_fam)],
+            y=can_df['Canal'],
+            x=can_df['pct'],
             orientation='h',
-            marker_color=col_fam,
-            textposition=fam_tpos,
-            text=[_var(v, sa, cj) for v, sa, cj in zip(fam_df['Total_var'], sin_ant_fam, fam_vol_list)],
-            textfont=dict(size=12, color=fam_tcol),
-            customdata=fam_df['Total_vol'],
-            hovertemplate='<b>%{y}</b><br>Cajas: %{customdata:,.0f}<extra></extra>',
+            marker_color=col_can,
+            marker_line_width=0,
+            text=[f"  {p:.0f}%  ({int(v):,} caj)" for p, v in zip(can_df['pct'], can_df['Total_a'])],
+            textposition='inside', insidetextanchor='start',
+            textfont=dict(size=11, color='#FFFFFF'),
+            customdata=list(zip(can_df['Total_a'], can_df['delta_pp'], can_df['pct_ant'])),
+            hovertemplate='<b>%{y}</b><br>Act: %{x:.0f}%  ·  %{customdata[0]:,.0f} caj'
+                          '<br>Ant: %{customdata[2]:.0f}%  (%{customdata[1]:+.0f}pp)<extra></extra>',
         ), row=1, col=2)
 
-        # Línea de cero en ambos paneles
-        for col in [1, 2]:
-            fig.add_vline(x=0, line_width=1, line_color=C['muted'], line_dash='dot', col=col)
+        # Línea de cero solo en el panel de Var % (representantes)
+        fig.add_vline(x=0, line_width=1, line_color=C['muted'], line_dash='dot', col=1)
 
         n_rep = len(rep_df)
-        n_fam = len(fam_df)
-        height = max(280, max(n_rep, n_fam) * 22 + 70)
+        n_can = len(can_df)
+        height = max(280, max(n_rep, n_can) * 22 + 70)
 
         pl_r = {k: v for k, v in PL.items() if k not in ('xaxis','yaxis','margin')}
         fig.update_layout(
             **pl_r,
-            title='Ranking Ejecutivo — Variación % vs Año Anterior',
+            title='Ranking Ejecutivo — Representantes y Canales',
             height=height,
             showlegend=False,
             margin=dict(l=10, r=80, t=46, b=24),
@@ -664,7 +660,9 @@ def fig_ranking_ejecutivo(flia_sel=None, repre_sel=None, canal_sel=None, meses_s
         _rx = dict(ticksuffix='%', tickfont=dict(size=10), gridcolor=C['border'],
                    range=[-VAR_CAP * 1.3, VAR_CAP * 1.3])
         fig.update_xaxes(**_rx, row=1, col=1)
-        fig.update_xaxes(**_rx, row=1, col=2)
+        x_can_max = (float(can_df['pct'].max()) + 18) if len(can_df) else 100
+        fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False,
+                         range=[0, x_can_max], row=1, col=2)
         fig.update_yaxes(tickfont=dict(size=10))
         return fig
     except Exception as e:
