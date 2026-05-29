@@ -1464,6 +1464,64 @@ def generar_red_flags(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=N
     return flags
 
 
+# ── Cobertura de familias ─────────────────────────────────────────────────────
+# Líneas nuevas bajo seguimiento de dirección comercial (watchlist permanente).
+LINEAS_SEGUIMIENTO = ['LA POSTA', 'LUCA', 'PADRILLOS', 'TIKAL', 'DOMAINE NICO']
+
+def _cobertura_base(repre_sel=None, canal_sel=None, meses_sel=None):
+    """Clientes activos este año (≥1 caja de cualquier familia). Permeable a
+    rep/canal/meses; NO filtra por familia. Sin Travel Retail (igual que el resto)."""
+    src = DFS['x cliente x canal'].copy()
+    if repre_sel: src = src[src['Vendedor'] == repre_sel]
+    if canal_sel: src = src[src['Canal'] == canal_sel]
+    act = get_ind(src, 'Año Actual Cajas', ['Canal', 'Cliente', 'flia'], meses_sel)
+    act = act[act['Total'] > 0]
+    act = act[~act['Canal'].astype(str).str.upper().str.strip().isin(['TRAVEL RETAIL'])]
+    return act
+
+def calcular_cobertura(flia_sel, repre_sel=None, canal_sel=None, meses_sel=None):
+    """En qué % de los clientes activos este año está presente una familia.
+    Denominador = activos este año (cualquier familia), ignora el filtro de familia
+    pero respeta rep/canal/meses. Incluye desglose por canal."""
+    res = {'pct': 0.0, 'con': 0, 'base': 0, 'por_canal': []}
+    if not flia_sel:
+        return res
+    try:
+        act = _cobertura_base(repre_sel, canal_sel, meses_sel)
+        base = act['Cliente'].nunique()
+        con  = act[act['flia'] == flia_sel]['Cliente'].nunique()
+        res['base'] = int(base)
+        res['con']  = int(con)
+        res['pct']  = (con / base * 100) if base else 0.0
+        for canal, grp in act.groupby('Canal'):
+            bc = grp['Cliente'].nunique()
+            if not bc: continue
+            cc = grp[grp['flia'] == flia_sel]['Cliente'].nunique()
+            res['por_canal'].append({'canal': canal, 'base': int(bc),
+                                     'con': int(cc), 'pct': cc / bc * 100})
+        res['por_canal'].sort(key=lambda d: d['pct'], reverse=True)
+    except Exception:
+        pass
+    return res
+
+def calcular_cobertura_lineas(repre_sel=None, canal_sel=None, meses_sel=None, lineas=None):
+    """Cobertura de las líneas en seguimiento. Base = activos este año, respeta
+    rep/canal/meses, ignora el filtro de familia (siempre muestra las 5)."""
+    lineas = lineas or LINEAS_SEGUIMIENTO
+    out = []
+    try:
+        act = _cobertura_base(repre_sel, canal_sel, meses_sel)
+        base = act['Cliente'].nunique()
+        for ln in lineas:
+            con = act[act['flia'] == ln]['Cliente'].nunique()
+            out.append({'linea': ln, 'con': int(con), 'base': int(base),
+                        'pct': (con / base * 100) if base else 0.0})
+    except Exception:
+        for ln in lineas:
+            out.append({'linea': ln, 'con': 0, 'base': 0, 'pct': 0.0})
+    return out
+
+
 def generar_analisis_quirurgico(flia_sel=None, repre_sel=None, canal_sel=None, meses_sel=None):
     """Genera datasets estructurados para el análisis quirúrgico de 4 niveles."""
     result = {}
@@ -3552,10 +3610,72 @@ def _content_body(tab, flia, repre, canal, meses, auth):
 
         # ── Ensamblar secciones
         _df_empty = pd.DataFrame()
+
+        def _cob_color(p):
+            if p >= 25: return C['green']
+            if p >= 10: return C['gold']
+            return C['red']
+
+        # Watchlist: líneas en seguimiento (siempre las 5; ignora filtro de familia)
+        cob_lineas = calcular_cobertura_lineas(repre, canal, meses)
+        watch_rows = []
+        for d in cob_lineas:
+            watch_rows.append(html.Tr([
+                html.Td(d['linea'], style={'padding':'4px 8px','fontSize':'11px',
+                    'borderBottom':f"1px solid {C['border']}"}),
+                html.Td(f"{d['pct']:.0f}%", style={'padding':'4px 8px','fontSize':'12px',
+                    'textAlign':'right','fontFamily':MONO,'fontWeight':'700',
+                    'color':_cob_color(d['pct']),'borderBottom':f"1px solid {C['border']}"}),
+                html.Td(f"{d['con']} de {d['base']}", style={'padding':'4px 8px','fontSize':'10px',
+                    'textAlign':'right','color':C['muted'],'fontFamily':MONO,
+                    'borderBottom':f"1px solid {C['border']}"}),
+            ]))
+        watch_block = html.Div([
+            html.Div("Líneas en Seguimiento — Cobertura", style={**SEC, 'marginTop':'16px'}),
+            html.Div("Clientes activos este año que ya compraron cada línea nueva (≥1 caja).",
+                style={'color':C['muted'],'fontSize':'10px','marginBottom':'8px'}),
+            html.Table([
+                html.Thead(html.Tr([_th('Línea','left'), _th('Cobertura'), _th('Clientes')])),
+                html.Tbody(watch_rows)
+            ], style={'width':'100%','borderCollapse':'collapse'})
+        ])
+
         sec_flags = html.Div([
             html.Div("Alertas Automáticas", style={**SEC, 'color': C['red']}),
-            *[_flag_item(nivel, msg) for nivel, msg in flags_d]
+            *[_flag_item(nivel, msg) for nivel, msg in flags_d],
+            watch_block,
         ], style={**CARD, 'borderColor': C['red']})
+
+        # Panel de cobertura de la familia filtrada (permeable a todos los filtros)
+        sec_cobertura = None
+        if flia:
+            cob = calcular_cobertura(flia, repre, canal, meses)
+            pc_rows = []
+            for d in cob['por_canal']:
+                pc_rows.append(html.Tr([
+                    html.Td(str(d['canal'])[:22], style={'padding':'4px 8px','fontSize':'11px',
+                        'borderBottom':f"1px solid {C['border']}"}),
+                    html.Td(f"{d['pct']:.0f}%", style={'padding':'4px 8px','fontSize':'12px',
+                        'textAlign':'right','fontFamily':MONO,'fontWeight':'700',
+                        'color':_cob_color(d['pct']),'borderBottom':f"1px solid {C['border']}"}),
+                    html.Td(f"{d['con']} de {d['base']}", style={'padding':'4px 8px','fontSize':'10px',
+                        'textAlign':'right','color':C['muted'],'fontFamily':MONO,
+                        'borderBottom':f"1px solid {C['border']}"}),
+                ]))
+            sec_cobertura = html.Div([
+                html.Div(f"Cobertura — {flia}", style={**SEC, 'color': C['gold']}),
+                html.Div([
+                    html.Span(f"{cob['pct']:.0f}%", style={'fontSize':'40px','fontWeight':'700',
+                        'fontFamily':MONO,'color':C['gold'],'lineHeight':'1'}),
+                    html.Span(f"{cob['con']} de {cob['base']} clientes activos",
+                        style={'fontSize':'12px','color':C['muted'],'marginLeft':'12px'}),
+                ], style={'display':'flex','alignItems':'baseline','marginBottom':'14px'}),
+                html.Div("Por canal", style={**LABEL, 'marginBottom':'6px'}),
+                html.Table([
+                    html.Thead(html.Tr([_th('Canal','left'), _th('Cobertura'), _th('Clientes')])),
+                    html.Tbody(pc_rows)
+                ], style={'width':'100%','borderCollapse':'collapse'}),
+            ], style={**CARD, 'borderColor': C['gold']})
 
         sec_region = html.Div([
             _tabla_diag(aq.get('canales', _df_empty), 'Canal', 'Canales — Variación YTD'),
@@ -3588,7 +3708,8 @@ def _content_body(tab, flia, repre, canal, meses, auth):
         ], style=CARD)
 
         _tend_el = _sec_tendencia(aq.get('tendencia', _df_empty))
-        _children = [_pbt, sec_flags, sec_rankings, sec_region, sec_canales_rep]
+        top_row = html.Div([sec_flags, sec_cobertura], style=G2) if sec_cobertura is not None else sec_flags
+        _children = [_pbt, top_row, sec_rankings, sec_region, sec_canales_rep]
         if _tend_el:
             _children.append(_tend_el)
 
