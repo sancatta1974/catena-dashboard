@@ -2024,6 +2024,18 @@ def generar_pdf_repre(repre_sel):
     except Exception as e:
         story.append(Paragraph(f"Error KPIs: {e}", ds['alert']))
 
+    # ── Líneas en seguimiento — cobertura (watchlist dirección comercial) ─────
+    story.append(_pdf_section("Líneas en Seguimiento — Cobertura", ds))
+    try:
+        cob_l = calcular_cobertura_lineas(repre_sel)
+        rows_cl = [['Línea', 'Cobertura', 'Clientes con la línea']]
+        for d in cob_l:
+            rows_cl.append([d['linea'], f"{d['pct']:.0f}%", f"{d['con']} de {d['base']}"])
+        story.append(_pdf_tbl(rows_cl, [6*cm, 4*cm, 6*cm], right_cols=(1, 2)))
+        story.append(Spacer(1, 0.3*cm))
+    except Exception as e:
+        story.append(Paragraph(f"Error cobertura líneas: {e}", ds['alert']))
+
     # ── Evolución mensual ─────────────────────────────────────────────────────
     story.append(_pdf_section("Evolución Mensual", ds))
     try:
@@ -2592,6 +2604,36 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
                 story.append(_pdf_alert_row(nivel, msg, ds))
         except Exception as e:
             story.append(Paragraph(f"Error red flags: {e}", ds['alert']))
+
+        # Líneas en seguimiento — cobertura (watchlist dirección comercial)
+        story.append(Spacer(1, 0.25*cm))
+        story.append(_pdf_section("LÍNEAS EN SEGUIMIENTO — COBERTURA", ds))
+        try:
+            cob_l = calcular_cobertura_lineas(repre_sel, canal_sel)
+            rows_cl = [['Línea', 'Cobertura', 'Clientes con la línea']]
+            for d in cob_l:
+                rows_cl.append([d['linea'], f"{d['pct']:.0f}%", f"{d['con']} de {d['base']}"])
+            story.append(_pdf_tbl(rows_cl, [6*cm, 4*cm, 6*cm], right_cols=(1, 2)))
+        except Exception as e:
+            story.append(Paragraph(f"Error cobertura líneas: {e}", ds['alert']))
+
+        # Cobertura de la familia filtrada (si hay una seleccionada)
+        if flia_sel:
+            story.append(Spacer(1, 0.25*cm))
+            story.append(_pdf_section(f"COBERTURA — {flia_sel}", ds))
+            try:
+                cob = calcular_cobertura(flia_sel, repre_sel, canal_sel)
+                story.append(Paragraph(
+                    f"Presente en {cob['con']} de {cob['base']} clientes activos este año "
+                    f"({cob['pct']:.0f}%).", ds['small']))
+                if cob['por_canal']:
+                    rows_cc = [['Canal', 'Cobertura', 'Clientes con la línea']]
+                    for d in cob['por_canal']:
+                        rows_cc.append([str(d['canal'])[:30], f"{d['pct']:.0f}%",
+                                        f"{d['con']} de {d['base']}"])
+                    story.append(_pdf_tbl(rows_cc, [6*cm, 4*cm, 6*cm], right_cols=(1, 2)))
+            except Exception as e:
+                story.append(Paragraph(f"Error cobertura familia: {e}", ds['alert']))
 
         # Análisis quirúrgico para PDF
         try:
