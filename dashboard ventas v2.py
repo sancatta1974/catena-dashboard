@@ -194,7 +194,8 @@ def _restar_y_recalcular(agg, src, excl, gcols):
 
     srce = src[src['Cliente'].astype(str).str.strip().isin(excl)]
 
-    partes, lut = [], {}
+    # 1) restar el aporte de los excluidos a las dos filas de cajas (Actual / Anterior)
+    cajas = {}
     for ind in (_IND_ACT, _IND_ANT):
         a = agg[agg['Indicadores'] == ind].copy()
         sub = srce[srce['Indicadores'] == ind]
@@ -207,25 +208,30 @@ def _restar_y_recalcular(agg, src, excl, gcols):
                 if xc in a.columns:
                     a[c] = (a[c] - a[xc].fillna(0)).clip(lower=0)
                     a.drop(columns=[xc], inplace=True)
-        partes.append(a)
-        lut[ind] = a.set_index(gcols)[vcols] if not a.empty else pd.DataFrame()
+        cajas[ind] = a
 
-    out_rows = list(partes)
+    # 2) recalcular los derivados (Var %, Diferencia) de forma vectorizada: se cruza
+    #    cada fila derivada con las cajas Actual/Anterior ya parcheadas por grupo.
+    act_v = cajas[_IND_ACT][gcols + vcols].rename(columns={c: c + '__a' for c in vcols})
+    ant_v = cajas[_IND_ANT][gcols + vcols].rename(columns={c: c + '__b' for c in vcols})
+    base = act_v.merge(ant_v, on=gcols, how='outer')
+    for c in vcols:
+        base[c + '__a'] = base[c + '__a'].fillna(0)
+        base[c + '__b'] = base[c + '__b'].fillna(0)
+
+    out_rows = [cajas[_IND_ACT], cajas[_IND_ANT]]
     for ind in [i for i in agg['Indicadores'].unique() if i not in (_IND_ACT, _IND_ANT)]:
         d = agg[agg['Indicadores'] == ind].copy()
         is_var = ('%' in ind) or ('var' in ind.lower())
-        la, lb = lut[_IND_ACT], lut[_IND_ANT]
-        for idx, row in d.iterrows():
-            gkey = tuple(row[g] for g in gcols) if len(gcols) > 1 else row[gcols[0]]
-            try:
-                av, bv = la.loc[gkey], lb.loc[gkey]
-            except (KeyError, AttributeError):
-                continue
-            for c in vcols:
-                a_ = av[c] if c in av.index else 0
-                b_ = bv[c] if c in bv.index else 0
-                d.at[idx, c] = ((a_ - b_) / b_ * 100) if (is_var and b_) else (
-                    float('nan') if is_var else a_ - b_)
+        merged = d[gcols].merge(base, on=gcols, how='left', indicator=True)
+        matched = (merged['_merge'] == 'both').values  # sin match → se conserva el valor original
+        for c in vcols:
+            a_, b_ = merged[c + '__a'].values, merged[c + '__b'].values
+            with np.errstate(divide='ignore', invalid='ignore'):
+                newv = np.where(b_ != 0, (a_ - b_) / b_ * 100, np.nan) if is_var else (a_ - b_)
+            col = pd.to_numeric(d[c], errors='coerce').values.astype(float)
+            col[matched] = newv[matched]
+            d[c] = col
         out_rows.append(d)
 
     return pd.concat(out_rows, ignore_index=True)
