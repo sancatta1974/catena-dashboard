@@ -2972,6 +2972,19 @@ app.index_string = '''
             .dash-tab--selected, .tab--selected { color: #C9A84C !important; border-bottom: 2px solid #C9A84C !important; background-color: transparent !important; }
             .dash-tabs { border-bottom: none !important; }
 
+            /* ── Dropdowns: contraste de texto (no depende del script JS) ── */
+            .dash-dropdown [class*="singleValue"],
+            .dash-dropdown [class*="multiValue"] [class*="label"],
+            .dash-dropdown [class*="-Input"],
+            .dash-dropdown [class*="-Input"] input,
+            .dash-dropdown input {
+                color: #F0EDE8 !important;
+                -webkit-text-fill-color: #F0EDE8 !important;
+                caret-color: #F0EDE8 !important;
+            }
+            .dash-dropdown [class*="placeholder"] { color: #B8B2A8 !important; }
+            .dash-dropdown [class*="option"] { color: #F0EDE8 !important; }
+
             /* ── Botones ── */
             button { -webkit-appearance: none !important; appearance: none !important; }
             button:disabled { opacity: 1 !important; cursor: not-allowed !important; }
