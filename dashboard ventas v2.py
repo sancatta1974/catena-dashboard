@@ -2622,35 +2622,34 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
             tf_cq.setStyle(TableStyle(ts_cq))
             story.append(tf_cq)
 
-        # Matriz Representante × Familia
+        # Representantes — ranking por variación (reemplaza el Mapa de Tendencias)
         story.append(Spacer(1, 0.3*cm))
-        story.append(_pdf_section("MAPA DE TENDENCIAS — REPRESENTANTE × FAMILIA", ds))
-        df_mx = aq_pdf.get('matriz', pd.DataFrame())
-        if not df_mx.empty:
-            flias_mx = list(df_mx.columns)
-            hdr_mx = [Paragraph('Rep.', hdr_st)] + [Paragraph(f[:9], hdr_st) for f in flias_mx]
-            rows_mx = [hdr_mx]
-            ts_mx   = [('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1A1A1A')),
-                       ('GRID',(0,0),(-1,-1),0.3,rl_colors.HexColor('#333333')),
-                       ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
-                       ('LEFTPADDING',(0,0),(-1,-1),3),('RIGHTPADDING',(0,0),(-1,-1),3),
-                       ('ALIGN',(1,0),(-1,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),7)]
-            for ri, rep in enumerate(df_mx.index, 1):
-                row_d = df_mx.loc[rep]
-                cells_mx = [Paragraph(rep[:18], cell_st)]
-                for ci, flia in enumerate(flias_mx, 1):
-                    v = row_d.get(flia, np.nan)
-                    bg = _pdf_var_color(v)
-                    cells_mx.append(Paragraph(_vt_pdf(v), cell_wh_st if bg else cell_st))
-                    if bg:
-                        ts_mx.append(('BACKGROUND',(ci,ri),(ci,ri),bg))
-                rows_mx.append(cells_mx)
-            n_flias = len(flias_mx)
-            rep_w = 3.5*cm
-            flia_w = (17*cm - rep_w) / max(n_flias, 1)
-            tf_mx = Table(rows_mx, colWidths=[rep_w] + [flia_w]*n_flias)
-            tf_mx.setStyle(TableStyle(ts_mx))
-            story.append(tf_mx)
+        story.append(_pdf_section("REPRESENTANTES — VARIACIÓN YTD", ds))
+        df_rq = aq_pdf.get('representantes', pd.DataFrame())
+        if not df_rq.empty:
+            hdr_row3 = [Paragraph(x, hdr_st) for x in ['Representante','Actual','Anterior','Dif','Var%']]
+            rows_rq = [hdr_row3]
+            ts_rq = [('BACKGROUND',(0,0),(-1,0),rl_colors.HexColor('#1A1A1A')),
+                     ('GRID',(0,0),(-1,-1),0.3,rl_colors.HexColor('#CCCCCC')),
+                     ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+                     ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
+                     ('ALIGN',(1,0),(-1,-1),'RIGHT')]
+            for i, (_, r) in enumerate(df_rq.iterrows(), 1):
+                v = r.get('Var%', np.nan)
+                dif = r.get('Dif', r['Actual'] - r['Anterior'])
+                bg = _pdf_var_color(v)
+                rows_rq.append([
+                    Paragraph(str(r['Vendedor'])[:30], cell_st),
+                    Paragraph(f"{int(r['Actual']):,}", cell_st),
+                    Paragraph(f"{int(r['Anterior']):,}", cell_st),
+                    Paragraph(f"{int(dif):+,}", cell_st),
+                    Paragraph(_vt_pdf(v), cell_wh_st if bg else cell_st),
+                ])
+                if bg:
+                    ts_rq.append(('BACKGROUND',(4,i),(4,i),bg))
+            tf_rq = Table(rows_rq, colWidths=[6*cm,3*cm,3*cm,2.5*cm,2.5*cm])
+            tf_rq.setStyle(TableStyle(ts_rq))
+            story.append(tf_rq)
 
     # ── PENDIENTES ────────────────────────────────────────────────────────────
     elif tab == 'pendientes':
