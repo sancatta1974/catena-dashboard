@@ -2919,6 +2919,12 @@ app.index_string = '''
             var GOLD = '#C9A84C';
 
             function paint(el) {
+                /* texto que se tipea en el buscador del dropdown (scopeado para no tocar el login) */
+                if (el.tagName === 'INPUT' && el.closest && el.closest('.dash-dropdown')) {
+                    el.style.setProperty('color',                 TEXT, 'important');
+                    el.style.setProperty('-webkit-text-fill-color', TEXT, 'important');
+                    el.style.setProperty('caret-color',           TEXT, 'important');
+                }
                 var cls = (el.className || '').toString();
                 if (!cls) return;
                 /* control */
