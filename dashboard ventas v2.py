@@ -9,7 +9,7 @@ from dash import Dash, dcc, html, Input, Output, State, no_update, callback_cont
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
-import warnings, webbrowser, threading, os, sys, io, base64, unicodedata, hashlib, json
+import warnings, webbrowser, threading, contextlib, os, sys, io, base64, unicodedata, hashlib, json
 from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -162,6 +162,117 @@ def get_ind(df, ind, groups, meses_sel=None):
             sub['Total'] = sub[valid].sum(axis=1)
     return sub
 
+# ── Exclusión de clientes ───────────────────────────────────────────────────────
+# Filtro global que hace "desaparecer" uno o varios clientes de TODO el dashboard.
+# Las hojas con columna Cliente se filtran directo; las hojas agregadas (sin Cliente)
+# no se pueden filtrar, así que se RESTA el aporte de los clientes excluidos y se
+# recalculan los indicadores derivados (Var %, Diferencia). El resultado se inyecta
+# vía swap del global DFS (ver _dfs_view) para que TODAS las funciones de gráficos lo
+# vean sin tener que pasar el dict por 20 firmas distintas. Seguro con gunicorn
+# --workers 1; el lock cubre el modo threaded local.
+
+_MESES_ALL = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+_IND_ACT = 'Año Actual Cajas'
+_IND_ANT = 'Año Anterior Cajas'
+_DFS_LOCK = threading.Lock()
+_EXCL_CACHE = {}
+
+# qué hoja agregada se parchea, desde qué hoja-cliente y con qué grano
+_EXCL_PLAN = [
+    ('x flia',          'x cliente',         ['flia']),
+    ('x repre',         'x cliente',         ['Vendedor', 'flia']),
+    ('x flia x canal',  'x cliente x canal', ['Canal', 'flia']),
+    ('x repre x canal', 'x cliente x canal', ['Vendedor', 'Canal', 'flia']),
+]
+
+def _restar_y_recalcular(agg, src, excl, gcols):
+    """Resta el aporte de los clientes `excl` a la hoja agregada `agg`, recalculando derivados."""
+    vcols = [m for m in _MESES_ALL if m in agg.columns] + (['Total'] if 'Total' in agg.columns else [])
+    agg = agg.copy()
+    for c in vcols:
+        agg[c] = pd.to_numeric(agg[c], errors='coerce').fillna(0)
+
+    srce = src[src['Cliente'].astype(str).str.strip().isin(excl)]
+
+    partes, lut = [], {}
+    for ind in (_IND_ACT, _IND_ANT):
+        a = agg[agg['Indicadores'] == ind].copy()
+        sub = srce[srce['Indicadores'] == ind]
+        if not a.empty and not sub.empty:
+            scols = [c for c in vcols if c in sub.columns]
+            ap = sub.groupby(gcols, as_index=False)[scols].sum()
+            a = a.merge(ap, on=gcols, how='left', suffixes=('', '_x'))
+            for c in vcols:
+                xc = c + '_x'
+                if xc in a.columns:
+                    a[c] = (a[c] - a[xc].fillna(0)).clip(lower=0)
+                    a.drop(columns=[xc], inplace=True)
+        partes.append(a)
+        lut[ind] = a.set_index(gcols)[vcols] if not a.empty else pd.DataFrame()
+
+    out_rows = list(partes)
+    for ind in [i for i in agg['Indicadores'].unique() if i not in (_IND_ACT, _IND_ANT)]:
+        d = agg[agg['Indicadores'] == ind].copy()
+        is_var = ('%' in ind) or ('var' in ind.lower())
+        la, lb = lut[_IND_ACT], lut[_IND_ANT]
+        for idx, row in d.iterrows():
+            gkey = tuple(row[g] for g in gcols) if len(gcols) > 1 else row[gcols[0]]
+            try:
+                av, bv = la.loc[gkey], lb.loc[gkey]
+            except (KeyError, AttributeError):
+                continue
+            for c in vcols:
+                a_ = av[c] if c in av.index else 0
+                b_ = bv[c] if c in bv.index else 0
+                d.at[idx, c] = ((a_ - b_) / b_ * 100) if (is_var and b_) else (
+                    float('nan') if is_var else a_ - b_)
+        out_rows.append(d)
+
+    return pd.concat(out_rows, ignore_index=True)
+
+def dfs_excluyendo(excluir):
+    """Devuelve un dict de DFS con los clientes `excluir` removidos de todas las hojas."""
+    if not excluir:
+        return DFS
+    excl = set(str(e).strip() for e in excluir if str(e).strip())
+    if not excl:
+        return DFS
+    key = tuple(sorted(excl))
+    hit = _EXCL_CACHE.get(key)
+    if hit and hit[0] is DFS:
+        return hit[1]
+
+    out = dict(DFS)
+    for sh in ('x cliente', 'x cliente x canal'):
+        if sh in DFS:
+            df = DFS[sh]
+            out[sh] = df[~df['Cliente'].astype(str).str.strip().isin(excl)].reset_index(drop=True)
+    for agg_name, src_name, gcols in _EXCL_PLAN:
+        if agg_name in DFS and src_name in DFS:
+            try:
+                out[agg_name] = _restar_y_recalcular(DFS[agg_name], DFS[src_name], excl, gcols)
+            except Exception as _e:
+                print(f"[EXCL] no se pudo parchear '{agg_name}': {_e}", flush=True)
+
+    _EXCL_CACHE.clear()
+    _EXCL_CACHE[key] = (DFS, out)
+    return out
+
+@contextlib.contextmanager
+def _dfs_view(excluir):
+    """Swap temporal del global DFS por la versión sin los clientes excluidos."""
+    global DFS
+    if not excluir:
+        yield
+        return
+    with _DFS_LOCK:
+        orig = DFS
+        DFS = dfs_excluyendo(excluir)
+        try:
+            yield
+        finally:
+            DFS = orig
+
 print("[STARTUP] Cargando datos...", flush=True)
 try:
     DFS = load_data()
@@ -175,6 +286,7 @@ MC  = month_cols(DFS.get('x flia', pd.DataFrame()))
 FAMILIAS       = sorted(DFS['x flia']['flia'].unique().tolist()) if DATA_OK else []
 REPRESENTANTES = sorted(DFS['x repre']['Vendedor'].unique().tolist()) if DATA_OK else []
 CANALES        = sorted([str(x) for x in DFS['x flia x canal']['Canal'].dropna().unique().tolist()]) if DATA_OK else []
+CLIENTES_ALL   = sorted(DFS['x cliente']['Cliente'].dropna().astype(str).str.strip().unique().tolist()) if DATA_OK else []
 
 # ── Credenciales ───────────────────────────────────────────────────────────────
 
@@ -2938,6 +3050,18 @@ app.layout = html.Div([
                         style=DD,
                     ),
                 ], style={'flex': 1.2}),
+                html.Div([
+                    html.Div('Excluir Cliente', id='excluir-label', style=LABEL),
+                    dcc.Dropdown(
+                        id='dd-excluir',
+                        options=[{'label': c, 'value': c} for c in CLIENTES_ALL],
+                        value=[],
+                        multi=True,
+                        placeholder='Ninguno',
+                        clearable=True,
+                        style=DD,
+                    ),
+                ], style={'flex': 1.6}),
             ], style={'display':'flex','gap':'14px','marginBottom':'0','alignItems':'flex-end'}),
         ], style={
             'position': 'sticky', 'top': '38px', 'zIndex': 100,
@@ -2972,12 +3096,40 @@ app.layout = html.Div([
     Input('dd-repre','value'),
     Input('dd-canal','value'),
     Input('dd-meses','value'),
+    Input('dd-excluir','value'),
     State('auth-store','data'),
 )
-def cb_kpis(n, _ver, flia, repre, canal, meses, auth):
+def cb_kpis(n, _ver, flia, repre, canal, meses, excluir, auth):
     if auth and auth.get('role') == 'vendedor':
         repre = auth.get('repre', '')
-    return build_kpis(flia or None, repre or None, canal or None, meses_sel=meses or None)
+    with _dfs_view(excluir):
+        return build_kpis(flia or None, repre or None, canal or None, meses_sel=meses or None)
+
+@app.callback(
+    Output('dd-excluir', 'options'),
+    Input('auth-store', 'data'),
+)
+def cb_excluir_options(auth):
+    """Cada vendedor solo puede excluir SUS clientes; región/admin, todos."""
+    if auth and auth.get('role') == 'vendedor' and 'x cliente' in DFS:
+        rep = auth.get('repre')
+        cli = DFS['x cliente']
+        cl = sorted(cli[cli['Vendedor'].astype(str).str.strip() == str(rep).strip()]
+                    ['Cliente'].dropna().astype(str).str.strip().unique().tolist())
+    else:
+        cl = CLIENTES_ALL
+    return [{'label': c, 'value': c} for c in cl]
+
+@app.callback(
+    Output('excluir-label', 'children'),
+    Output('excluir-label', 'style'),
+    Input('dd-excluir', 'value'),
+)
+def cb_excluir_badge(vals):
+    n = len(vals or [])
+    if n:
+        return f'● Excluir Cliente ({n})', {**LABEL, 'color': C['gold'], 'fontWeight': '700'}
+    return 'Excluir Cliente', LABEL
 
 @app.callback(
     Output('data-version', 'data'),
@@ -3009,9 +3161,14 @@ def cb_auto_sync(n, last_modified, version):
     Input('dd-repre','value'),
     Input('dd-canal','value'),
     Input('dd-meses','value'),
+    Input('dd-excluir','value'),
     State('auth-store','data'),
 )
-def cb_content(tab, _ver, flia, repre, canal, meses, auth):
+def cb_content(tab, _ver, flia, repre, canal, meses, excluir, auth):
+    with _dfs_view(excluir):
+        return _content_body(tab, flia, repre, canal, meses, auth)
+
+def _content_body(tab, flia, repre, canal, meses, auth):
     if auth and auth.get('role') == 'vendedor':
         repre = auth.get('repre', '')
     flia  = flia  or None
@@ -3593,12 +3750,14 @@ def cb_update_dropdown_options(_ver):
     Output('download-pdf', 'data'),
     Input('btn-pdf', 'n_clicks'),
     State('dd-repre', 'value'),
+    State('dd-excluir', 'value'),
     prevent_initial_call=True,
 )
-def cb_pdf(n_clicks, repre):
+def cb_pdf(n_clicks, repre, excluir):
     if not n_clicks or not repre or not PDF_AVAILABLE:
         return None
-    pdf_bytes = generar_pdf_repre(repre)
+    with _dfs_view(excluir):
+        pdf_bytes = generar_pdf_repre(repre)
     if not pdf_bytes:
         return None
     nombre = repre.replace(' ', '_').replace('/', '-')
@@ -3611,12 +3770,14 @@ def cb_pdf(n_clicks, repre):
     State('dd-flia',  'value'),
     State('dd-repre', 'value'),
     State('dd-canal', 'value'),
+    State('dd-excluir', 'value'),
     prevent_initial_call=True,
 )
-def cb_resumen_pdf(n_clicks, flia, repre, canal):
+def cb_resumen_pdf(n_clicks, flia, repre, canal, excluir):
     if not n_clicks or not PDF_AVAILABLE:
         return None
-    pdf_bytes = generar_pdf_resumen(flia or None, repre or None, canal or None)
+    with _dfs_view(excluir):
+        pdf_bytes = generar_pdf_resumen(flia or None, repre or None, canal or None)
     if not pdf_bytes:
         return None
     filtro = "_".join(filter(None, [flia, repre, canal])).replace(' ','_') or "region"
@@ -3630,20 +3791,22 @@ def cb_resumen_pdf(n_clicks, flia, repre, canal):
     State('dd-flia', 'value'),
     State('dd-repre', 'value'),
     State('dd-canal', 'value'),
+    State('dd-excluir', 'value'),
     State('auth-store', 'data'),
     prevent_initial_call=True,
 )
-def cb_tab_pdf(n_clicks, tab, flia, repre, canal, auth):
+def cb_tab_pdf(n_clicks, tab, flia, repre, canal, excluir, auth):
     if not n_clicks or not PDF_AVAILABLE:
         return None
     if auth and auth.get('role') == 'vendedor':
         repre = auth.get('repre', '')
-    pdf_bytes = generar_pdf_tab(
-        tab,
-        flia_sel=flia or None,
-        repre_sel=repre or None,
-        canal_sel=canal or None,
-    )
+    with _dfs_view(excluir):
+        pdf_bytes = generar_pdf_tab(
+            tab,
+            flia_sel=flia or None,
+            repre_sel=repre or None,
+            canal_sel=canal or None,
+        )
     if not pdf_bytes:
         return None
     TAB_LABELS = {
