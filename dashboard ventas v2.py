@@ -2985,6 +2985,16 @@ app.index_string = '''
             .dash-dropdown [class*="placeholder"] { color: #B8B2A8 !important; }
             .dash-dropdown [class*="option"] { color: #F0EDE8 !important; }
 
+            /* El buscador "Search" del menú se renderiza en un portal FUERA de
+               .dash-dropdown, así que se apunta directo al input dondequiera esté. */
+            input[placeholder="Search" i],
+            [class*="menu"] input, [class*="Menu"] input, [class*="MenuList"] input,
+            [class*="option"] input {
+                color: #F0EDE8 !important;
+                -webkit-text-fill-color: #F0EDE8 !important;
+                caret-color: #C9A84C !important;
+            }
+
             /* ── Botones ── */
             button { -webkit-appearance: none !important; appearance: none !important; }
             button:disabled { opacity: 1 !important; cursor: not-allowed !important; }
