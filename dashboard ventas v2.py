@@ -3059,11 +3059,13 @@ app.index_string = '''
             var GOLD = '#C9A84C';
 
             function paint(el) {
-                /* texto que se tipea en el buscador del dropdown (scopeado para no tocar el login) */
-                if (el.tagName === 'INPUT' && el.closest && el.closest('.dash-dropdown')) {
+                /* Texto que se tipea en CUALQUIER buscador de dropdown (incluido el menú
+                   portaleado de Excluir Cliente / Seleccionar Cliente). Se excluyen sólo
+                   los inputs del login, que van oscuros sobre fondo blanco. */
+                if (el.tagName === 'INPUT' && el.id !== 'login-user' && el.id !== 'login-pass') {
                     el.style.setProperty('color',                 TEXT, 'important');
                     el.style.setProperty('-webkit-text-fill-color', TEXT, 'important');
-                    el.style.setProperty('caret-color',           TEXT, 'important');
+                    el.style.setProperty('caret-color',           GOLD, 'important');
                 }
                 var cls = (el.className || '').toString();
                 if (!cls) return;
