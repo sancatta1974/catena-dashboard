@@ -228,7 +228,9 @@ def _restar_y_recalcular(agg, src, excl, gcols):
         for c in vcols:
             a_, b_ = merged[c + '__a'].values, merged[c + '__b'].values
             with np.errstate(divide='ignore', invalid='ignore'):
-                newv = np.where(b_ != 0, (a_ - b_) / b_ * 100, np.nan) if is_var else (a_ - b_)
+                # Var %/Var% Cajas se guardan como FRACCIÓN (los consumidores hacen *100);
+                # Diferencia* es absoluta (cajas). Mantener la escala original de la hoja.
+                newv = np.where(b_ != 0, (a_ - b_) / b_, np.nan) if is_var else (a_ - b_)
             col = pd.to_numeric(d[c], errors='coerce').values.astype(float)
             col[matched] = newv[matched]
             d[c] = col
