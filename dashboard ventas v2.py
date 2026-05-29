@@ -2803,6 +2803,123 @@ def generar_pdf_tab(tab, flia_sel=None, repre_sel=None, canal_sel=None):
 
 INSIGHTS, ALERTAS, OPORTUNIDADES, FODA = generar_analisis()  # global defaults for PDF
 
+# ── Ficha de cliente ─────────────────────────────────────────────────────────
+def clientes_de(repre_sel=None):
+    """Clientes disponibles; si se pasa un representante, solo los suyos."""
+    df = DFS.get('x cliente')
+    if df is None or df.empty:
+        return []
+    if repre_sel:
+        df = df[df['Vendedor'].astype(str).str.strip() == str(repre_sel).strip()]
+    return sorted(df['Cliente'].dropna().astype(str).str.strip().unique().tolist())
+
+def _cli_df(cli):
+    df = DFS['x cliente']
+    return df[df['Cliente'].astype(str).str.strip() == str(cli).strip()]
+
+def cliente_vendedor(cli):
+    d = _cli_df(cli)
+    v = d['Vendedor'].dropna().astype(str).str.strip().unique().tolist()
+    return v[0] if v else '—'
+
+def cliente_canales(cli):
+    df = DFS.get('x cliente x canal')
+    if df is None:
+        return []
+    d = df[df['Cliente'].astype(str).str.strip() == str(cli).strip()]
+    a = get_ind(d, _IND_ACT, ['Canal'])
+    g = a.groupby('Canal', observed=True)['Total'].sum()
+    canales = [str(c) for c, v in g.items() if v and v > 0]
+    return canales or [str(c) for c in d['Canal'].dropna().astype(str).unique().tolist()]
+
+def cliente_familias(cli, meses_sel=None):
+    """Una fila por familia con cajas actual/anterior, diferencia y var %."""
+    d = _cli_df(cli)
+    a = get_ind(d, _IND_ACT, ['flia'], meses_sel).groupby('flia', observed=True)['Total'].sum().rename('act')
+    b = get_ind(d, _IND_ANT, ['flia'], meses_sel).groupby('flia', observed=True)['Total'].sum().rename('ant')
+    m = pd.concat([a, b], axis=1).fillna(0.0).reset_index()
+    m['dif'] = m['act'] - m['ant']
+    m['var'] = np.where(m['ant'] > 0, m['dif'] / m['ant'] * 100, np.nan)
+    return m
+
+def cliente_kpis(cli, meses_sel=None):
+    m = cliente_familias(cli, meses_sel)
+    ta, tb = float(m['act'].sum()), float(m['ant'].sum())
+    vt = (ta - tb) / tb * 100 if tb else np.nan
+    return ta, tb, vt
+
+def cliente_oportunidades(cli, meses_sel=None):
+    """Lista de (nivel, mensaje) accionables para ofrecerle negocio al cliente."""
+    m = cliente_familias(cli, meses_sel)
+    ops = []
+    perdidas = m[(m['ant'] > 0) & (m['act'] == 0)].sort_values('ant', ascending=False)
+    for _, r in perdidas.iterrows():
+        ops.append(('CRITICO', f"Dejó de comprar {r['flia']} — compraba {int(r['ant']):,} cajas. Oportunidad de reactivar."))
+    caidas = m[(m['act'] > 0) & (m['ant'] > 0) & (m['var'] <= -25)].sort_values('var')
+    for _, r in caidas.iterrows():
+        ops.append(('ALERTA', f"{r['flia']} cayó {r['var']:.0f}% ({int(r['dif']):,} cajas). Revisar qué pasó."))
+    nuevas = m[(m['ant'] == 0) & (m['act'] > 0)].sort_values('act', ascending=False)
+    for _, r in nuevas.iterrows():
+        ops.append(('OK', f"Empezó a comprar {r['flia']} este año ({int(r['act']):,} cajas)."))
+    compra = set(m[m['act'] > 0]['flia'].astype(str)) | set(m[m['ant'] > 0]['flia'].astype(str))
+    no_compra = [f for f in FAMILIAS if f not in compra]
+    if no_compra:
+        muestra = ', '.join(no_compra[:6]) + ('…' if len(no_compra) > 6 else '')
+        ops.append(('INFO', f"No compra: {muestra}. Posible cross-sell."))
+    if not ops:
+        ops.append(('OK', 'Sin alertas: el cliente compra de forma estable en todas sus familias.'))
+    return ops
+
+def fig_cliente_familias(cli, meses_sel=None):
+    """Barras horizontales por familia (cajas año actual), coloreadas por variación. Clickeable."""
+    try:
+        m = cliente_familias(cli, meses_sel)
+        m = m[(m['act'] > 0) | (m['ant'] > 0)].sort_values('act')
+        if m.empty:
+            return go.Figure().update_layout(**PL, title='Sin compras registradas', height=300)
+        colors = [C['green'] if (pd.isna(v) or v >= 0) else C['red'] for v in m['var']]
+        txt = [(_var(v) if not pd.isna(v) else 'nuevo') for v in m['var']]
+        fig = go.Figure(go.Bar(
+            x=m['act'], y=m['flia'].astype(str), orientation='h',
+            marker_color=colors, text=txt, textposition='outside',
+            customdata=np.stack([m['ant'], m['dif'], m['var'].fillna(0)], axis=-1),
+            hovertemplate=('<b>%{y}</b><br>Año actual: %{x:,.0f} caj<br>'
+                           'Año anterior: %{customdata[0]:,.0f} caj<br>'
+                           'Δ: %{customdata[1]:,.0f} caj<extra></extra>'),
+        ))
+        fig.update_layout(**PL, title='Compra por familia (clic para ver estacionalidad)',
+                          height=max(300, 38 * len(m)), showlegend=False)
+        fig.update_xaxes(ticksuffix=' caj')
+        fig.update_yaxes(tickfont=dict(size=11), automargin=True)
+        return fig
+    except Exception as e:
+        return go.Figure().update_layout(**PL, title=f'Error familias: {e}')
+
+def fig_cliente_estacionalidad(cli, flia_sel=None):
+    """Línea mensual actual vs. año anterior para ver estacionalidad de compra."""
+    try:
+        d = _cli_df(cli)
+        act = get_ind(d, _IND_ACT, ['flia'])
+        ant = get_ind(d, _IND_ANT, ['flia'])
+        if flia_sel:
+            act = act[act['flia'].astype(str) == str(flia_sel)]
+            ant = ant[ant['flia'].astype(str) == str(flia_sel)]
+        ya = [float(pd.to_numeric(act[m], errors='coerce').sum()) if m in act.columns else 0.0 for m in MC]
+        yb = [float(pd.to_numeric(ant[m], errors='coerce').sum()) if m in ant.columns else 0.0 for m in MC]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=MC, y=yb, name='Año anterior', mode='lines+markers',
+                                 line=dict(color=C['muted'], width=2, dash='dot'),
+                                 hovertemplate='Año anterior: %{y:,.0f} caj<extra></extra>'))
+        fig.add_trace(go.Scatter(x=MC, y=ya, name='Año actual', mode='lines+markers',
+                                 line=dict(color=C['gold'], width=2.5),
+                                 hovertemplate='Año actual: %{y:,.0f} caj<extra></extra>'))
+        sub = flia_sel if flia_sel else 'Todas las familias'
+        fig.update_layout(**PL, title=f'Estacionalidad de compra — {sub}', height=300)
+        fig.update_yaxes(ticksuffix=' caj')
+        return fig
+    except Exception as e:
+        return go.Figure().update_layout(**PL, title=f'Error estacionalidad: {e}')
+
 # ── Estilos ────────────────────────────────────────────────────────────────────
 
 CARD  = {'backgroundColor':C['surf'],'border':f"1px solid {C['border']}",
@@ -3126,6 +3243,7 @@ app.layout = html.Div([
             dcc.Tabs(id='tabs', value='region', children=[
                 dcc.Tab(label='REGION',         value='region',    style=TS, selected_style=TSS),
                 dcc.Tab(label='REPRESENTANTES', value='repre',     style=TS, selected_style=TSS),
+                dcc.Tab(label='SELECCIONAR CLIENTE', value='ficha', style=TS, selected_style=TSS),
                 dcc.Tab(label='CLIENTES',       value='clientes',  style=TS, selected_style=TSS),
                 dcc.Tab(label='CANALES',        value='canales',   style=TS, selected_style=TSS),
                 dcc.Tab(label='ANALISIS',       value='analisis',  style=TS, selected_style=TSS),
@@ -3357,6 +3475,22 @@ def _content_body(tab, flia, repre, canal, meses, auth):
         ] + ([
             html.Div([dcc.Graph(figure=fig_top10_concentracion(repre, flia, canal, meses), config={'displayModeBar':False})], style=CARD),
         ] if repre else []))
+
+    elif tab == 'ficha':
+        opciones = clientes_de(repre)
+        return html.Div([
+            html.Div([
+                html.Div('Seleccionar cliente', style=LABEL),
+                dcc.Dropdown(
+                    id='dd-cliente',
+                    options=[{'label': c, 'value': c} for c in opciones],
+                    value=None,
+                    placeholder='Buscá y elegí un cliente…',
+                    clearable=True, style=DD,
+                ),
+            ], style=CARD_G),
+            html.Div(id='cliente-ficha'),
+        ])
 
     elif tab == 'clientes':
         try:
@@ -3929,6 +4063,82 @@ def cb_update_dropdown_options(_ver):
     canal_opts = [{'label':'Todos','value':''}] + [{'label':c,'value':c} for c in CANALES]
     mes_opts   = [{'label':m,'value':m} for m in reversed(MC)]
     return flia_opts, repre_opts, canal_opts, mes_opts
+
+
+# ── Ficha de cliente: callbacks ──────────────────────────────────────────────
+@app.callback(
+    Output('cliente-ficha', 'children'),
+    Input('dd-cliente', 'value'),
+    Input('dd-meses', 'value'),
+    Input('data-version', 'data'),
+    State('auth-store', 'data'),
+    prevent_initial_call=False,
+)
+def cb_cliente_ficha(cli, meses, _ver, auth):
+    _hint = {'color': C['muted'], 'textAlign': 'center', 'padding': '50px',
+             'fontSize': '13px', 'letterSpacing': '1px'}
+    if not cli:
+        return html.Div('Buscá y elegí un cliente arriba para ver su ficha completa.', style=_hint)
+    if auth and auth.get('role') == 'vendedor' and cli not in clientes_de(auth.get('repre')):
+        return html.Div('Este cliente no pertenece a tu cartera.', style=_hint)
+    meses = meses or None
+
+    ta, tb, vt = cliente_kpis(cli, meses)
+    vcol = C['green'] if (pd.isna(vt) or vt >= 0) else C['red']
+    tiles = [
+        ('CAJAS AÑO ACTUAL',   f"{int(ta):,}",  C['gold'], MONO, '18px'),
+        ('CAJAS AÑO ANTERIOR', f"{int(tb):,}",  C['text'], MONO, '18px'),
+        ('VARIACIÓN',          (_var(vt) if not pd.isna(vt) else '—'), vcol, MONO, '18px'),
+        ('VENDEDOR',           cliente_vendedor(cli), C['text'], FONT, '12px'),
+        ('CANAL',              ' · '.join(cliente_canales(cli)) or '—', C['text'], FONT, '12px'),
+    ]
+    kpi_bar = html.Div([
+        html.Div([
+            html.Div(lbl, style={'color':C['muted'],'fontSize':'8px','letterSpacing':'1.5px',
+                                 'textTransform':'uppercase','marginBottom':'4px'}),
+            html.Div(val, style={'color':col,'fontSize':fs,'fontWeight':'700','fontFamily':ff},
+                     title=str(val)),
+        ], style={'backgroundColor':C['surf'],'border':f"1px solid {C['border']}",
+                  'borderRadius':'3px','padding':'12px','textAlign':'center','overflow':'hidden'})
+        for lbl, val, col, ff, fs in tiles
+    ], style={'display':'grid','gridTemplateColumns':'repeat(5,1fr)','gap':'10px','marginBottom':'14px'})
+
+    _oc = {'CRITICO': C['red'], 'ALERTA': '#E67E22', 'OK': C['green'], 'INFO': C['muted']}
+    op_items = []
+    for nivel, msg in cliente_oportunidades(cli, meses):
+        bc = _oc.get(nivel, C['muted'])
+        op_items.append(html.Div([
+            html.Span(nivel, style={'backgroundColor':bc,'color':'white','fontSize':'8px',
+                'letterSpacing':'1px','padding':'2px 6px','borderRadius':'2px',
+                'marginRight':'8px','fontWeight':'700','flexShrink':'0'}),
+            html.Span(msg, style={'fontSize':'12px','lineHeight':'1.5'}),
+        ], style={'padding':'6px 10px','borderLeft':f"2px solid {bc}",'marginBottom':'4px',
+                  'display':'flex','alignItems':'flex-start'}))
+    op_card = html.Div([html.Div('OPORTUNIDADES COMERCIALES', style=SEC)] + op_items, style=CARD_G)
+
+    return html.Div([
+        kpi_bar,
+        op_card,
+        html.Div([dcc.Graph(id='cli-fam-graph', figure=fig_cliente_familias(cli, meses),
+                            config={'displayModeBar':False})], style=CARD),
+        html.Div([dcc.Graph(id='cli-season-graph', figure=fig_cliente_estacionalidad(cli),
+                            config={'displayModeBar':False})], style=CARD),
+    ])
+
+
+@app.callback(
+    Output('cli-season-graph', 'figure'),
+    Input('cli-fam-graph', 'clickData'),
+    State('dd-cliente', 'value'),
+    prevent_initial_call=True,
+)
+def cb_cliente_season(click_data, cli):
+    if not cli:
+        return no_update
+    flia = None
+    if click_data and click_data.get('points'):
+        flia = click_data['points'][0].get('y')
+    return fig_cliente_estacionalidad(cli, flia)
 
 
 @app.callback(
