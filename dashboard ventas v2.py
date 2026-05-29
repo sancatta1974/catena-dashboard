@@ -128,6 +128,7 @@ def load_data():
             raise FileNotFoundError(f"Archivo no encontrado en Drive ni localmente: {EXCEL_PATH}")
         xl = pd.ExcelFile(EXCEL_PATH)
     dfs = {}
+    _num_cols = set(_MESES_ALL) | {'Total'}
     for sheet in xl.sheet_names:
         df = xl.parse(sheet)
         df.columns = [str(c).strip() for c in df.columns]
@@ -135,6 +136,16 @@ def load_data():
             try:
                 df[col] = df[col].str.strip()
             except:
+                pass
+        # Optimización de memoria: numéricos a float32 y texto repetido a category.
+        # Baja el DFS ~90% para que la RAM no escale con el tamaño del Excel.
+        for c in df.columns:
+            try:
+                if c in _num_cols:
+                    df[c] = pd.to_numeric(df[c], errors='coerce').astype('float32')
+                elif df[c].dtype == object and df[c].nunique(dropna=False) / max(len(df), 1) < 0.5:
+                    df[c] = df[c].astype('category')
+            except Exception:
                 pass
         dfs[sheet.strip().lower()] = df  # siempre minúscula
 

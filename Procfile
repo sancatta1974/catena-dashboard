@@ -1,1 +1,1 @@
-web: gunicorn "dashboard ventas v2:server" --bind 0.0.0.0:$PORT --workers 1 --timeout 300
+web: gunicorn "dashboard ventas v2:server" --bind 0.0.0.0:$PORT --workers 1 --timeout 300 --max-requests 300 --max-requests-jitter 50
